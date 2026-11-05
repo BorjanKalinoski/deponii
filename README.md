@@ -25,10 +25,17 @@ See `CONTEXT.md` for the project's vocabulary and `docs/adr/` for why it is buil
 
 ```sh
 npm install               # map library and font sources (already copied into assets/)
-node --test               # logic and data-check tests
+npm test                  # unit tests (node --test): logic and data check
+npx playwright install chromium   # once, for the end-to-end tests
+npm run test:e2e          # end-to-end tests (Playwright), desktop and phone
+npm run test:all          # both
 node scripts/update-data.mjs path/to/file.csv   # run the data check on a local file
 python3 -m http.server    # then open http://localhost:8000
 ```
+
+The end-to-end tests serve the site themselves (`e2e/serve.mjs`, port 4173) with
+fixed data (`test/fixtures/sample.csv`) and a stand-in basemap, so they need no
+network and don't change with the daily data check.
 
 There is no build step: `index.html`, `assets/` and `data/` are served as they are.
 MapLibre GL JS and IBM Plex Sans are vendored in `assets/vendor` and `assets/fonts`
