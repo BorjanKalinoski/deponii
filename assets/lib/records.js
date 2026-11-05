@@ -1,6 +1,7 @@
 // Turn validated feed rows into recorded sites.
 import { classifyWaste, isUnstated } from './materials.js';
 import { searchKey, slug } from './translit.js';
+import { severity } from './severity.js';
 
 export const TYPE_CODES = {
   'Буниште': 'dumpsite',
@@ -69,7 +70,7 @@ export function buildRecords(rows) {
       note: text(note),
       searchKeys: names.map(searchKey).join('|'),
     };
-  });
+  }).map((rec) => ({ ...rec, severity: severity(rec) }));
 }
 
 /** Records that share their exact coordinate pair with another record. */

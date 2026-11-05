@@ -20,6 +20,7 @@ export function toQuery({ state, lang, view }) {
   if (state.municipalities.size) p.set('m', list(state.municipalities));
   if (state.types.size) p.set('t', list(state.types));
   if (state.materials.size) p.set('w', list(state.materials));
+  if (state.severity.size) p.set('d', list(state.severity));
   if (state.areaMin != null) p.set('amin', String(state.areaMin));
   if (state.areaMax != null) p.set('amax', String(state.areaMax));
   if (state.bounds) p.set('b', state.bounds.map((x) => round(x, 5)).join(','));
@@ -36,6 +37,7 @@ export function fromQuery(search) {
   state.municipalities = toSet(p.get('m'));
   state.types = toSet(p.get('t'));
   state.materials = toSet(p.get('w'));
+  state.severity = new Set([...toSet(p.get('d'))].filter((x) => /^[1-4]$/.test(x)));
   state.areaMin = num(p.get('amin'));
   state.areaMax = num(p.get('amax'));
   const b = (p.get('b') || '').split(',').map(Number);

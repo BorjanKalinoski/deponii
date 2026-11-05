@@ -1,23 +1,14 @@
-// Waste-material marker symbols. Each kind has its own pictogram as well as
-// its own colour, so markers stay distinguishable without relying on colour.
+// Marker symbols. The fill colour shows severity (see severity.js); the white
+// pictogram inside shows the waste material, so the two never depend on
+// colour alone.
 
 export const ICON_KINDS = [
   'municipal', 'construction', 'bulky', 'industrial', 'bio', 'agricultural',
   'packaging', 'mixed', 'other', 'unknown',
 ];
 
-export const COLORS = {
-  municipal: '#2f6db0',
-  construction: '#b4532f',
-  bulky: '#7b4ea6',
-  industrial: '#4b5560',
-  bio: '#2f8547',
-  agricultural: '#9a7a12',
-  packaging: '#16807f',
-  mixed: '#a8326e',
-  other: '#7d6248',
-  unknown: '#80868c',
-};
+// Neutral fill for symbols shown without a severity (legend, filters).
+export const NEUTRAL = '#46545a';
 
 const RIM = '#111a1c';
 
@@ -52,8 +43,7 @@ const GLYPHS = {
  * a pale basemap; on a dark basemap the white ring does that job. The white
  * pictogram sits on a faint dark outline so it stays legible on pale fills too.
  */
-export function markerSvg(kind, { unknownSize = false, px = 64 } = {}) {
-  const color = COLORS[kind] || COLORS.unknown;
+export function markerSvg(kind, { unknownSize = false, px = 64, color = NEUTRAL } = {}) {
   const glyph = GLYPHS[kind] || GLYPHS.unknown;
   const pictogram = (attrs) => `<g transform="translate(5.6 5.6) scale(0.867)" fill="none" stroke-linecap="round" stroke-linejoin="round" ${attrs}>${glyph}</g>`;
   const rim = `<circle cx="16" cy="16" r="15.8" fill="${RIM}" fill-opacity="${unknownSize ? 0.45 : 0.55}"/>`;
@@ -81,4 +71,4 @@ export function markerPx(area) {
   return Math.round((MIN_PX + t * (MAX_PX - MIN_PX)) * 10) / 10;
 }
 
-export const imageName = (kind, unknownSize) => `m-${kind}${unknownSize ? '-u' : ''}`;
+export const imageName = (kind, unknownSize, level = 0) => `m-${kind}-${level}${unknownSize ? '-u' : ''}`;

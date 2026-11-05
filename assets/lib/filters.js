@@ -8,6 +8,7 @@ export function emptyState() {
     municipalities: new Set(),
     types: new Set(),
     materials: new Set(), // material codes plus 'unknown' and 'other'
+    severity: new Set(), // '1'..'4'
     areaMin: null,
     areaMax: null,
     bounds: null, // [west, south, east, north] from "Search this area"
@@ -22,7 +23,7 @@ export function isAreaRangeActive(s) {
 export function hasActiveFilters(s) {
   return Boolean(
     s.q.trim() || s.regions.size || s.municipalities.size || s.types.size ||
-    s.materials.size || isAreaRangeActive(s) || s.bounds,
+    s.materials.size || s.severity.size || isAreaRangeActive(s) || s.bounds,
   );
 }
 
@@ -49,6 +50,7 @@ export function applyFilters(records, s) {
     if (s.municipalities.size && !s.municipalities.has(r.municipalityCode)) return false;
     if (s.types.size && !s.types.has(r.typeCode)) return false;
     if (s.materials.size && !matchesMaterials(r, s.materials)) return false;
+    if (s.severity.size && !s.severity.has(String(r.severity))) return false;
     if (rangeOn) {
       if (r.area == null) return false;
       if (s.areaMin != null && r.area < s.areaMin) return false;
