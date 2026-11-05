@@ -35,7 +35,8 @@ const app = {
   map: null,
   mapReady: false,
   popup: null,
-  legendOpen: !isPhone(),
+  // Open only where the map is wide enough that the legend won't cover the country.
+  legendOpen: window.innerWidth - 400 >= 900,
   muniFilter: '',
   lastFocus: null,
 };
@@ -535,7 +536,7 @@ function initMap() {
     map.addSource('selected', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
     map.addLayer({
       id: 'selected-halo', type: 'circle', source: 'selected',
-      paint: { 'circle-radius': ['+', ['/', ['get', 'px'], 2], 7], 'circle-color': 'rgba(240,180,41,0.25)', 'circle-stroke-color': '#c98a00', 'circle-stroke-width': 3 },
+      paint: { 'circle-radius': ['+', ['/', ['get', 'px'], 2], 7], 'circle-color': 'rgba(240,180,41,0)', 'circle-stroke-color': '#c98a00', 'circle-stroke-width': 3 },
     });
     map.addLayer({
       id: 'clusters', type: 'circle', source: 'sites', filter: ['has', 'point_count'],
