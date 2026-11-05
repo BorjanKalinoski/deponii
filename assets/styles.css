@@ -220,7 +220,8 @@ legend { font-weight: 600; padding: 0; margin-bottom: 8px; font-size: var(--step
   .layout { grid-template-columns: 1fr; grid-template-rows: 1fr; height: calc(100% - var(--topbar) - env(safe-area-inset-top, 0px)); padding-bottom: calc(var(--switch) + env(safe-area-inset-bottom, 0px)); }
   .sidebar, .map-wrap { grid-area: 1 / 1; border-right: 0; }
   .layout[data-view="map"] .sidebar { visibility: hidden; }
-  .layout[data-view="list"] .map-wrap { visibility: hidden; }
+  .layout[data-view="list"] .map-wrap,
+  .layout[data-view="list"] .map-wrap * { visibility: hidden !important; }
   .layout[data-view="map"] .sidebar .panel:not([hidden]) { visibility: visible; }
   .search-row, .chips, .results-head, .data-note { padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)); }
   .item button { padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)); }
