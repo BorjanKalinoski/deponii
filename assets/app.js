@@ -141,8 +141,10 @@ function renderStaticText() {
   $('#tagline').textContent = s.tagline;
   $('#copy-link-label').textContent = s.copyLink;
   $('#copy-link').setAttribute('aria-label', s.copyLink);
+  // The button names the other language; phones show its short form.
   const lt = $('#lang-toggle');
-  lt.textContent = s.lang;
+  lt.innerHTML = `<span class="lang-long">${esc(s.lang)}</span><span class="lang-short" aria-hidden="true">${esc(s.langShort)}</span>`;
+  lt.setAttribute('aria-label', s.lang);
   lt.lang = s.langCode;
   renderThemeToggle();
   $('#q-label').textContent = s.searchLabel;
@@ -199,6 +201,9 @@ function renderStatus() {
   }
   status.hidden = app.dataStatus !== 'unavailable';
   status.textContent = s.unavailable;
+  // Phones open on the map, where the list's message can't be seen.
+  $('#data-error').hidden = app.dataStatus !== 'unavailable';
+  $('#data-error').textContent = s.unavailable;
 
   const last = $('#last-update');
   if (app.meta?.checkedAt) {
@@ -545,7 +550,7 @@ function renderDetails() {
     ? `<p class="ext"><a href="https://www.google.com/maps/search/?api=1&amp;query=${r.lat},${r.lon}" target="_blank" rel="noopener">${esc(s.googleMaps)} ↗</a></p>`
     : '';
   $('#details-body').innerHTML = `
-    <div class="detail-kind"><img src="${iconSrc(r.waste.icon, r.area == null, r.severity)}" alt=""><span>${esc(kind)} · ${esc(type || s.unknown)}</span></div>
+    <div class="detail-kind"><img src="${iconSrc(r.waste.icon, r.area == null, r.severity)}" alt=""><span>${esc(kind)} · ${esc(type || s.unknown)}<span class="detail-sev">${esc(s.severity)}: ${esc(s.severityLevels[r.severity])}</span></span></div>
     ${showOnMapBtn}
     <dl class="dl">
       ${row(s.regionL, regionName(r.region, app.lang))}
@@ -586,7 +591,7 @@ function renderLegend() {
     <ul>${sevRows}</ul>
     <p class="legend-note">${esc(s.severityNote)}</p>
     <h3>${esc(s.material)}</h3>
-    <ul>${kinds.map((k) => `<li><img src="${iconSrc(k)}" alt=""><span>${esc(MATERIAL_LABELS[app.lang][k])}</span></li>`).join('')}</ul>
+    <ul class="kinds">${kinds.map((k) => `<li><img src="${iconSrc(k)}" alt=""><span>${esc(MATERIAL_LABELS[app.lang][k])}</span></li>`).join('')}</ul>
     <h3>${esc(s.legendSize)}</h3>
     <div class="sizes">${sizes}<figure><span class="disc disc-u" style="width:${UNKNOWN_PX}px;height:${UNKNOWN_PX}px"></span><figcaption>${esc(s.unknownSize)}</figcaption></figure></div>
     <ul style="margin-top:10px"><li><span class="cluster-sample">12</span><span>${esc(s.clusterNote)}</span></li></ul>
