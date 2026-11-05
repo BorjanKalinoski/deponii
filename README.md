@@ -41,3 +41,20 @@ There is no build step: `index.html`, `assets/` and `data/` are served as they a
 MapLibre GL JS and IBM Plex Sans are vendored in `assets/vendor` and `assets/fonts`
 (licences alongside). The basemap is OpenFreeMap (© OpenMapTiles, © OpenStreetMap
 contributors).
+
+## Maintenance
+
+A daily routine checks dependencies for advisories and updates, and releases patch
+and minor updates to `main` when every test passes. Its runbook is
+[`docs/maintenance.md`](docs/maintenance.md).
+
+```sh
+npm run security          # read-only report: npm audit, outdated packages, vendored files, GitHub Actions
+npm run vendor            # copy MapLibre and Plex from node_modules into assets/ after an update
+npm run vendor:check      # fail if assets/ differs from the installed packages (CI runs this)
+```
+
+Updating `package.json` alone changes nothing on the live site: run `npm run vendor`
+and commit the copied files with it. CI (`.github/workflows/ci.yml`) runs the unit
+tests, the vendored-files check, the end-to-end suite and an audit of production
+dependencies on every push to `main` and every pull request.
