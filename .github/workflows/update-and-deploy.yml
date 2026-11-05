@@ -1,4 +1,9 @@
-name: Update data and deploy
+name: Update data
+
+# GitHub Pages publishes the site straight from the main branch
+# (Settings → Pages → Deploy from a branch: main, / (root)).
+# This workflow only runs the tests and refreshes the checked data copy;
+# a data commit it pushes to main is what updates the live site.
 
 on:
   schedule:
@@ -10,19 +15,14 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 concurrency:
-  group: update-and-deploy
+  group: update-data
   cancel-in-progress: false
 
 jobs:
-  update-and-deploy:
+  update-data:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v5
 
@@ -49,10 +49,3 @@ jobs:
             git commit -m "Data check $(date -u +%Y-%m-%dT%H:%MZ)"
             git push
           fi
-
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v4
-        with:
-          path: .
-      - id: deploy
-        uses: actions/deploy-pages@v4
