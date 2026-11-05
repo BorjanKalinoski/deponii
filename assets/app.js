@@ -931,10 +931,15 @@ function toast(msg) {
 // Read-only handle for the end-to-end tests (e2e/fixtures.mjs).
 window.__deponii = app;
 
+// MapLibre GL JS is vendored as an ES module. Load it without holding up the list;
+// the map starts when it arrives. If it fails, initMap shows the map error and the list still works.
+const mapLibReady = import('./vendor/maplibre-gl.mjs')
+  .then((lib) => { window.maplibregl = lib; }, (err) => { console.error('MapLibre failed to load', err); });
+
 applyTheme(app.theme);
 renderStaticText();
 bindEvents();
 setView('map');
 renderStatus();
-initMap();
+mapLibReady.then(initMap);
 loadData();

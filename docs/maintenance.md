@@ -238,7 +238,7 @@ Commit message format (one commit per npm package, one for all action bumps):
 deps: maplibre-gl 5.23.0 → 5.24.0
 
 - maplibre-gl 5.23.0 → 5.24.0 (minor); vendored files refreshed with npm run vendor:
-  assets/vendor/maplibre-gl.js, assets/vendor/maplibre-gl.css
+  assets/vendor/maplibre-gl.mjs, assets/vendor/maplibre-gl-worker.mjs, assets/vendor/maplibre-gl.css
 - Advisories fixed: GHSA-xxxx-xxxx-xxxx (high) <title>   (or: none)
 
 Maint-Run: 2026-11-05

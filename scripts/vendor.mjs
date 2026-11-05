@@ -24,9 +24,13 @@ const PLEX_WEIGHTS = [400, 500, 600];
 /** Every vendored file: [path inside the npm package, path in the repo]. */
 export const VENDORED = [
   {
+    // v6 ships ES modules only. The page imports maplibre-gl.mjs, and the library
+    // starts its worker from ./maplibre-gl-worker.mjs next to it, so both keep
+    // their package names.
     name: 'maplibre-gl',
     files: [
-      ['dist/maplibre-gl.js', 'assets/vendor/maplibre-gl.js'],
+      ['dist/maplibre-gl.mjs', 'assets/vendor/maplibre-gl.mjs'],
+      ['dist/maplibre-gl-worker.mjs', 'assets/vendor/maplibre-gl-worker.mjs'],
       ['dist/maplibre-gl.css', 'assets/vendor/maplibre-gl.css'],
       ['LICENSE.txt', 'assets/vendor/maplibre-LICENSE.txt'],
     ],
