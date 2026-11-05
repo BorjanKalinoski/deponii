@@ -8,7 +8,9 @@
   "scripts": {
     "test": "node --test",
     "test:e2e": "playwright test",
-    "test:all": "node --test && playwright test"
+    "test:all": "node --test && playwright test",
+    "vendor": "node scripts/vendor.mjs",
+    "vendor:check": "node scripts/vendor.mjs --check"
   },
   "license": "MIT",
   "dependencies": {
