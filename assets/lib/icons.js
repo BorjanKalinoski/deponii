@@ -19,6 +19,8 @@ export const COLORS = {
   unknown: '#80868c',
 };
 
+const RIM = '#111a1c';
+
 // Pictograms on a 24×24 grid, drawn with a round 2-unit stroke.
 const GLYPHS = {
   // Waste bin with lid.
@@ -46,22 +48,26 @@ const GLYPHS = {
 /**
  * Marker as an SVG string. `unknownSize` draws the neutral "unknown size"
  * variant: a dashed ring on white, so it can't be mistaken for a small site.
+ * A soft dark rim outside the white ring keeps every marker's edge visible on
+ * a pale basemap; on a dark basemap the white ring does that job. The white
+ * pictogram sits on a faint dark outline so it stays legible on pale fills too.
  */
 export function markerSvg(kind, { unknownSize = false, px = 64 } = {}) {
   const color = COLORS[kind] || COLORS.unknown;
   const glyph = GLYPHS[kind] || GLYPHS.unknown;
-  const disc = unknownSize
-    ? `<circle cx="16" cy="16" r="13.5" fill="#ffffff" stroke="${color}" stroke-width="2.5" stroke-dasharray="4.2 2.6"/>`
-    : `<circle cx="16" cy="16" r="14" fill="${color}" stroke="#ffffff" stroke-width="2.2"/>`;
-  const stroke = unknownSize ? color : '#ffffff';
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 32 32">${disc}<g transform="translate(5.6 5.6) scale(0.867)" fill="none" stroke="${stroke}" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">${glyph}</g></svg>`;
+  const pictogram = (attrs) => `<g transform="translate(5.6 5.6) scale(0.867)" fill="none" stroke-linecap="round" stroke-linejoin="round" ${attrs}>${glyph}</g>`;
+  const rim = `<circle cx="16" cy="16" r="15.8" fill="${RIM}" fill-opacity="${unknownSize ? 0.45 : 0.55}"/>`;
+  const body = unknownSize
+    ? `<circle cx="16" cy="16" r="14.7" fill="#ffffff"/><circle cx="16" cy="16" r="13.2" fill="none" stroke="${color}" stroke-width="2.6" stroke-dasharray="4.2 2.6"/>${pictogram(`stroke="${color}" stroke-width="2.2"`)}`
+    : `<circle cx="16" cy="16" r="13.3" fill="${color}" stroke="#ffffff" stroke-width="2.4"/>${pictogram(`stroke="${RIM}" stroke-opacity="0.35" stroke-width="3.8"`)}${pictogram('stroke="#ffffff" stroke-width="2.2"')}`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 32 32">${rim}${body}</svg>`;
 }
 
 export const MIN_AREA = 10;
 export const MAX_AREA = 100000;
-export const MIN_PX = 16;
-export const MAX_PX = 46;
-export const UNKNOWN_PX = 22;
+export const MIN_PX = 18;
+export const MAX_PX = 48;
+export const UNKNOWN_PX = 24;
 
 /**
  * Marker diameter in CSS pixels for a recorded area. A fixed logarithmic

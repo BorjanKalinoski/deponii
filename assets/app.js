@@ -11,8 +11,8 @@ import {
 } from './lib/i18n.js';
 import { searchKey } from './lib/translit.js';
 import { ICON_KINDS, markerSvg, markerPx, imageName, MIN_PX, MAX_PX, UNKNOWN_PX } from './lib/icons.js';
+import { THEME_KEY, THEME_COLOR, MAP_THEMES, resolveTheme, basemapPaint } from './lib/theme.js';
 
-const STYLE_URL = 'https://tiles.openfreemap.org/styles/positron';
 const MK_BOUNDS = [[20.45, 40.84], [23.04, 42.38]];
 const SKOPJE_REGION = 'skopski';
 const CLUSTER_MAX_ZOOM = 11;
@@ -23,7 +23,15 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const isPhone = () => window.matchMedia('(max-width: 767px)').matches;
 
 const initial = fromQuery(location.search);
+const darkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+function storedTheme() {
+  try { return localStorage.getItem(THEME_KEY); } catch { return null; }
+}
+function storeTheme(theme) {
+  try { localStorage.setItem(THEME_KEY, theme); } catch { /* private mode: the choice lasts this visit */ }
+}
 const app = {
+  theme: resolveTheme(storedTheme(), darkQuery?.matches),
   lang: initial.lang,
   state: initial.state,
   records: [],
@@ -34,6 +42,8 @@ const app = {
   selectedId: null,
   map: null,
   mapReady: false,
+  mapLoadedOnce: false,
+  styleGen: 0, // counts basemap loads, so a superseded one stops adding layers
   popup: null,
   // Open only where the map is wide enough that the legend won't cover the country.
   legendOpen: window.innerWidth - 400 >= 900,
@@ -89,7 +99,7 @@ function update({ fit = null } = {}) {
 }
 
 function writeUrl() {
-  const view = app.mapReady
+  const view = app.mapLoadedOnce
     ? { lng: app.map.getCenter().lng, lat: app.map.getCenter().lat, zoom: app.map.getZoom() }
     : initial.view;
   const q = toQuery({ state: app.state, lang: app.lang, view });
@@ -124,6 +134,7 @@ function renderStaticText() {
   const lt = $('#lang-toggle');
   lt.textContent = s.lang;
   lt.lang = s.langCode;
+  renderThemeToggle();
   $('#q-label').textContent = s.searchLabel;
   $('#q').placeholder = s.search;
   $('#filters-label').textContent = s.filters;
@@ -139,6 +150,26 @@ function renderStaticText() {
   $('.view-switch').setAttribute('aria-label', s.viewSwitch);
   $('#date-note').textContent = s.dateNote;
   renderLegend();
+}
+
+/* ---------- Theme ---------- */
+
+// The button names the theme it switches to.
+function renderThemeToggle() {
+  const label = app.theme === 'dark' ? t().themeLight : t().themeDark;
+  const btn = $('#theme-toggle');
+  $('#theme-toggle-label').textContent = label;
+  btn.title = label;
+}
+
+function applyTheme(theme, { remember = false } = {}) {
+  const changed = theme !== app.theme;
+  app.theme = theme;
+  document.documentElement.dataset.theme = theme;
+  if (remember) storeTheme(theme);
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => { m.content = THEME_COLOR[theme]; });
+  renderThemeToggle();
+  if (changed) restyleMap();
 }
 
 /* ---------- Status / counts ---------- */
@@ -499,23 +530,107 @@ function fitToResults() {
   app.map.fitBounds([[w - pad, so - pad], [e + pad, n + pad]], { padding: 48, maxZoom: 14, duration: 700 });
 }
 
-async function addMarkerImages(map) {
-  const jobs = [];
-  for (const kind of ICON_KINDS) {
-    for (const unknownSize of [false, true]) {
-      const img = new Image(64, 64);
-      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markerSvg(kind, { unknownSize, px: 64 }));
-      jobs.push(img.decode().then(() => map.addImage(imageName(kind, unknownSize), img, { pixelRatio: 2 })));
+// Marker bitmaps are decoded once and re-added whenever the basemap changes,
+// because a new style starts without the previous one's images.
+let markerImages = null;
+function decodeMarkerImages() {
+  if (!markerImages) {
+    const jobs = [];
+    for (const kind of ICON_KINDS) {
+      for (const unknownSize of [false, true]) {
+        const img = new Image(64, 64);
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markerSvg(kind, { unknownSize, px: 64 }));
+        jobs.push(img.decode().then(() => [imageName(kind, unknownSize), img]));
+      }
+    }
+    markerImages = Promise.all(jobs);
+  }
+  return markerImages;
+}
+
+// Make the basemap easier to read under the markers: clearer water, borders and
+// place names. Layers are matched by what they draw; anything missing is skipped.
+function tuneBasemap(map, theme) {
+  for (const layer of map.getStyle()?.layers || []) {
+    for (const [prop, value] of basemapPaint(layer, theme)) {
+      try { map.setPaintProperty(layer.id, prop, value); } catch (err) { console.warn('Basemap tweak skipped', layer.id, prop, err); }
     }
   }
-  await Promise.all(jobs);
+}
+
+// Sources, images and layers for the recorded sites, coloured for the current
+// theme. Runs on every basemap load, since setStyle() removes all of them.
+async function addSiteLayers(map) {
+  const gen = ++app.styleGen;
+  const theme = app.theme;
+  const c = MAP_THEMES[theme];
+  app.mapReady = false;
+  tuneBasemap(map, theme);
+  const images = await decodeMarkerImages();
+  if (gen !== app.styleGen || map.getSource('sites')) return; // a newer basemap took over
+  for (const [name, img] of images) if (!map.hasImage(name)) map.addImage(name, img, { pixelRatio: 2 });
+  map.addSource('sites', { type: 'geojson', data: featureCollection(), cluster: true, clusterMaxZoom: CLUSTER_MAX_ZOOM, clusterRadius: 44 });
+  map.addSource('selected', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  const clusterRadius = ['step', ['get', 'point_count'], 15, 10, 18, 30, 22, 80, 26];
+  map.addLayer({
+    id: 'cluster-glow', type: 'circle', source: 'sites', filter: ['has', 'point_count'],
+    paint: { 'circle-radius': ['+', clusterRadius, 5], 'circle-color': c.clusterGlow },
+  });
+  map.addLayer({
+    id: 'clusters', type: 'circle', source: 'sites', filter: ['has', 'point_count'],
+    paint: {
+      'circle-color': c.cluster,
+      'circle-stroke-color': c.clusterStroke,
+      'circle-stroke-width': 2.5,
+      'circle-radius': clusterRadius,
+    },
+  });
+  map.addLayer({
+    id: 'cluster-count', type: 'symbol', source: 'sites', filter: ['has', 'point_count'],
+    layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-font': ['Noto Sans Bold'], 'text-size': 13, 'text-allow-overlap': true },
+    paint: { 'text-color': c.clusterText },
+  });
+  map.addLayer({
+    id: 'points', type: 'symbol', source: 'sites', filter: ['!', ['has', 'point_count']],
+    layout: {
+      'icon-image': ['get', 'img'], 'icon-size': ['get', 'scale'], 'icon-allow-overlap': true,
+      'icon-ignore-placement': true, 'symbol-sort-key': ['get', 'sortKey'],
+    },
+  });
+  // The selection ring sits above markers so a selected small site stays
+  // visible: a contrasting casing under a solid ring, so it reads on any fill.
+  const ringRadius = ['+', ['/', ['get', 'px'], 2], 7];
+  map.addLayer({
+    id: 'selected-casing', type: 'circle', source: 'selected',
+    paint: { 'circle-radius': ringRadius, 'circle-opacity': 0, 'circle-stroke-color': c.selectedCasing, 'circle-stroke-width': 6 },
+  });
+  map.addLayer({
+    id: 'selected-halo', type: 'circle', source: 'selected',
+    paint: { 'circle-radius': ringRadius, 'circle-opacity': 0, 'circle-stroke-color': c.selected, 'circle-stroke-width': 3 },
+  });
+  app.mapReady = true;
+  updateMap();
+  if (!app.mapLoadedOnce) {
+    app.mapLoadedOnce = true;
+    if (app.dataStatus === 'ready' && hasActiveFilters(app.state) && !initial.view) fitToResults();
+  }
+}
+
+// Switch the basemap for the current theme, keeping the view where it is.
+function restyleMap() {
+  const map = app.map;
+  if (!map) return;
+  const view = { center: map.getCenter(), zoom: map.getZoom() };
+  app.mapReady = false;
+  map.once('style.load', () => map.jumpTo(view));
+  map.setStyle(MAP_THEMES[app.theme].style, { diff: false });
 }
 
 function initMap() {
   if (!window.maplibregl) { showMapError(); return; }
   const opts = {
     container: 'map',
-    style: STYLE_URL,
+    style: MAP_THEMES[app.theme].style,
     attributionControl: { compact: true },
     dragRotate: false,
     pitchWithRotate: false,
@@ -529,42 +644,7 @@ function initMap() {
   map.touchZoomRotate.disableRotation();
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
   map.on('error', (e) => console.warn('Map error', e?.error?.message || e));
-
-  map.on('load', async () => {
-    await addMarkerImages(map);
-    map.addSource('sites', { type: 'geojson', data: featureCollection(), cluster: true, clusterMaxZoom: CLUSTER_MAX_ZOOM, clusterRadius: 44 });
-    map.addSource('selected', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-    map.addLayer({
-      id: 'selected-halo', type: 'circle', source: 'selected',
-      paint: { 'circle-radius': ['+', ['/', ['get', 'px'], 2], 7], 'circle-color': 'rgba(240,180,41,0)', 'circle-stroke-color': '#c98a00', 'circle-stroke-width': 3 },
-    });
-    map.addLayer({
-      id: 'clusters', type: 'circle', source: 'sites', filter: ['has', 'point_count'],
-      paint: {
-        'circle-color': '#ffffff',
-        'circle-stroke-color': '#0e6655',
-        'circle-stroke-width': 2.5,
-        'circle-radius': ['step', ['get', 'point_count'], 14, 10, 17, 30, 21, 80, 25],
-      },
-    });
-    map.addLayer({
-      id: 'cluster-count', type: 'symbol', source: 'sites', filter: ['has', 'point_count'],
-      layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-font': ['Noto Sans Bold'], 'text-size': 12, 'text-allow-overlap': true },
-      paint: { 'text-color': '#123d35' },
-    });
-    map.addLayer({
-      id: 'points', type: 'symbol', source: 'sites', filter: ['!', ['has', 'point_count']],
-      layout: {
-        'icon-image': ['get', 'img'], 'icon-size': ['get', 'scale'], 'icon-allow-overlap': true,
-        'icon-ignore-placement': true, 'symbol-sort-key': ['get', 'sortKey'],
-      },
-    });
-    // The halo sits above markers so a selected small site stays visible.
-    map.moveLayer('selected-halo');
-    app.mapReady = true;
-    updateMap();
-    if (app.dataStatus === 'ready' && hasActiveFilters(app.state) && !initial.view) fitToResults();
-  });
+  map.on('style.load', () => { addSiteLayers(map).catch((err) => console.error('Map layers failed', err)); });
 
   map.on('click', 'clusters', async (e) => {
     const f = e.features[0];
@@ -686,6 +766,14 @@ function bindEvents() {
     if (app.selectedId != null) renderDetails();
   });
 
+  $('#theme-toggle').addEventListener('click', () => {
+    applyTheme(app.theme === 'dark' ? 'light' : 'dark', { remember: true });
+  });
+  // Follow the system setting live, unless the visitor picked a theme here.
+  darkQuery?.addEventListener?.('change', (e) => {
+    if (!['light', 'dark'].includes(storedTheme())) applyTheme(e.matches ? 'dark' : 'light');
+  });
+
   $('#copy-link').addEventListener('click', async () => {
     writeUrl();
     try { await navigator.clipboard.writeText(location.href); toast(t().copied); } catch { prompt('', location.href); }
@@ -719,6 +807,7 @@ function toast(msg) {
 
 /* ---------- Start ---------- */
 
+applyTheme(app.theme);
 renderStaticText();
 bindEvents();
 setView('map');
