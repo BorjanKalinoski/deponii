@@ -41,11 +41,12 @@ jobs:
       - name: Vendored files match the installed packages
         run: node scripts/vendor.mjs --check
 
+      # --no: use the project's @playwright/test, never download another version.
       - name: Install the Playwright browser
-        run: npx playwright install --with-deps chromium
+        run: npx --no playwright install --with-deps chromium
 
       - name: End-to-end tests (desktop + phone)
-        run: npx playwright test
+        run: npx --no playwright test
 
       - name: Upload the Playwright report
         if: failure()

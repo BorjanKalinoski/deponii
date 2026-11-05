@@ -176,12 +176,13 @@ Input: `checker.md` with `DECISION: update` or `security-fix`, and
    git -C "$WORK/implementer" switch -c "$BRANCH" origin/main
    git -C "$WORK/implementer" rev-parse HEAD          # this is <base>
    cd "$WORK/implementer" && npm ci
-   cd "$WORK/implementer" && npx playwright install chromium   # see Environment notes
+   cd "$WORK/implementer" && npx --no playwright install chromium   # see Environment notes
    ```
    Then run the **gate** once on `<base>`, before changing anything:
-   `node --test`, `npm run vendor:check` and `npx playwright test`, all from
-   `$WORK/implementer`. All three must exit 0. If `<base>` is already red, no update
-   can be judged: stop with `RESULT: error` and the failing output.
+   `node --test`, `npm run vendor:check` and `npx --no playwright test`, all from
+   `$WORK/implementer`. All three must exit 0. If `<base>` is already red (or has no
+   `playwright.config.mjs`), no update can be judged: stop with `RESULT: error` and
+   the failing output.
 2. For each entry of `plan.npm`, one package at a time, in order:
    1. Run its `install` command exactly (it keeps the `package.json` pin style:
       `--save-exact` for exact pins).
@@ -195,19 +196,34 @@ Input: `checker.md` with `DECISION: update` or `security-fix`, and
       record it as skipped with the failing command and the end of its output, and
       continue with the next entry. Never edit code or tests to make it pass.
    5. `@playwright/test` only: if its new version's browser can't be installed here
-      (`npx playwright install chromium` fails and the tests report a missing
+      (`npx --no playwright install chromium` fails and the tests report a missing
       executable), skip it as "browser download blocked in this environment".
 3. If `plan.npmAuditFix` is `true`: run `npm audit fix` (never `--force`), apply the
    same gate, and commit as `deps: npm audit fix (transitive)`, listing each changed
    package `old → new` from the `package-lock.json` diff.
-4. For each entry of `plan.actions`: in every file under `.github/workflows/`,
-   replace `uses: <action>@<from>` with `uses: <action>@<to>`, and change nothing
-   else. Read the release notes between the two versions (`gh release list -R
-   <action>` or the repository's releases page). If they describe a breaking change to
-   an input our workflows set (`node-version`, `cache`, the upload `with:` keys) or to
-   how `actions/checkout` stores credentials for `git push`, skip that bump. If you
-   couldn't read them, apply the bump and say "release notes not read" in
-   `implementer.md`. Commit all action bumps together as `ci: ...`.
+4. For each entry of `plan.actions`, first read the notes for every release between
+   `from` and `to`. `gh` is usually blocked for other repositories, but git works:
+   ```sh
+   git clone --quiet --depth 1 --branch <to> https://github.com/<action> "$WORK/notes-<name>"
+   ```
+   Read its `CHANGELOG.md`, or the "What's new" / "Breaking changes" sections of its
+   `README.md`, and its `action.yml`. Skip the bump, with the reason, when either of
+   these holds:
+   - a `with:` key our workflows pass to that action is missing from the new
+     `inputs:` in `action.yml`;
+   - a documented breaking change touches what our workflows use: checkout's
+     persisted credentials (the data job runs `git push`), setup-node's
+     `node-version` or `cache`, or upload-artifact's `name`, `path`,
+     `retention-days` or `if-no-files-found`.
+   Breaking changes elsewhere (inputs we don't set, such as `registry-url`) don't
+   block the bump. If you couldn't read the notes, apply the bump and write
+   "release notes not read" in `implementer.md`. To apply it, replace the ref in every
+   workflow and change nothing else:
+   ```sh
+   sed -i -E 's#(uses:[[:space:]]*)<action>@<from>([[:space:]]|$)#\1<action>@<to>\2#' "$WORK/implementer"/.github/workflows/*.yml
+   ```
+   Commit all action bumps together as `ci: <action> <from> → <to>, …`, listing what
+   the notes said for each.
 5. Run the allowed-paths check against `<base>`. It must print nothing. Then
    `git log --format='%h %s' <base>..HEAD` lists the branch's commits.
 6. Write `$HANDOFF/implementer.md`. First line: `RESULT: ready` (at least one
@@ -250,20 +266,24 @@ instead of trusting the Implementer's results.
    output to `$HANDOFF/tester-<n>.log` and record the exit code:
    1. `node --test`
    2. `npm run vendor:check`
-   3. `npx playwright install chromium`. This may fail where browser downloads are
-      blocked and a browser is preinstalled (`PLAYWRIGHT_BROWSERS_PATH`). That is fine
-      only if step 4 then runs.
-   4. `npx playwright test`. This runs the desktop and phone projects. If
-      `playwright.config.mjs` is missing, or a browser executable is missing, the site
-      wasn't verified, and that counts as a failure.
+   3. `npx --no playwright install chromium`. This may fail where browser downloads
+      are blocked and a browser is preinstalled (`PLAYWRIGHT_BROWSERS_PATH`). That is
+      fine only if step 4 then runs.
+   4. `npx --no playwright test`. This runs the desktop and phone projects and takes
+      about 6 minutes here, so give it a 15-minute timeout. First confirm that
+      `playwright.config.mjs` and `node_modules/.bin/playwright` (the project's own
+      `@playwright/test`, installed by `npm ci`) both exist. If either is missing,
+      or a browser executable is missing, the site wasn't verified, and that counts
+      as a failure.
    5. `npm audit --audit-level=high --omit=dev`
    6. The allowed-paths check against `<base>` from `implementer.md` (must print
       nothing).
-3. Confirm the e2e run loaded the site and the map drew its markers. The step 4 log
-   must show passed tests whose titles mention markers, in both the `desktop` and
-   `phone` projects (now `danger colours on the map › each marker uses its site's
-   severity colour…` and `site details › clicking a marker on the map opens that
-   site`), and its summary must report 0 failed and 0 flaky.
+3. Confirm the e2e run loaded the site and the map drew its markers. In the step 4
+   log (`grep -i marker`), each of the `desktop` and `phone` projects must have at
+   least one passed (✓) test whose title mentions markers. Today these are
+   `danger colours on the map › each marker uses its site's severity colour…` (both
+   projects) and `site details › clicking a marker on the map opens that site`
+   (desktop; phone skips it by design). The summary must report 0 failed and 0 flaky.
 4. Write `$HANDOFF/tester.md`. First line: `RESULT: pass` only if every command
    exited 0 and step 3 holds. Otherwise `RESULT: fail`. Then the tested commit,
    and for each command its exit code and the last lines of its output (the
@@ -406,7 +426,12 @@ GitHub Actions: <action ref → latest, or "couldn't check">
   `PLAYWRIGHT_BROWSERS_PATH` works only for the Playwright version it was installed
   for. This is why a `@playwright/test` bump can be "skipped: browser download
   blocked" (Implementer), and why a missing executable fails the Tester. GitHub
-  Actions installs the browser itself (`npx playwright install --with-deps chromium`).
+  Actions installs the browser itself (`npx --no playwright install --with-deps chromium`).
+- **Always `npx --no playwright`.** In a non-interactive shell, plain `npx` quietly
+  downloads the latest `playwright` from npm when the project doesn't install it,
+  and some images also carry a global `playwright`. Neither is the version the suite
+  pins. `--no` forbids the download; the Tester's check for
+  `node_modules/.bin/playwright` rules out the global one.
 - **`npm run security` prints an npm banner on stdout.** Use `--out <file>` for a
   clean JSON file. The file must be outside the repository: the check refuses to write
   inside it.
