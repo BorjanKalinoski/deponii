@@ -6,7 +6,9 @@
     "doc": "docs"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "vendor": "node scripts/vendor.mjs",
+    "vendor:check": "node scripts/vendor.mjs --check"
   },
   "license": "MIT",
   "dependencies": {
