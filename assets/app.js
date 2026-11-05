@@ -23,6 +23,8 @@ const PIN_ZOOM = 15; // close enough that the site is never inside a cluster
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const isPhone = () => window.matchMedia('(max-width: 767px)').matches;
+// Phones show either the map or the list; wider screens always show both.
+const mapVisible = () => !isPhone() || $('.layout').dataset.view === 'map';
 
 const initial = fromQuery(location.search);
 const darkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
@@ -406,11 +408,15 @@ function select(id, { from = 'list', fly = true } = {}) {
   const r = app.byId.get(id);
   if (!r) return;
   app.selectedId = id;
+  clearPulse();
+  setDetailsPeek(false);
   markListSelection();
   renderDetails();
   if (app.popup) { app.popup.remove(); app.popup = null; }
   updateSelectedOnMap();
-  if (fly && r.located) pinpoint(r, { zoom: SELECT_ZOOM });
+  // On phones the list hides the map: move it along quietly, without a pulse
+  // nobody would see.
+  if (fly && r.located) pinpoint(r, { zoom: SELECT_ZOOM, pulse: mapVisible() });
   if (from === 'map') {
     const btn = document.querySelector(`#list button[data-id="${id}"]`);
     btn?.scrollIntoView({ block: 'nearest' });
@@ -422,36 +428,70 @@ function select(id, { from = 'list', fly = true } = {}) {
 
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+/** How much of the bottom of the map the phone details sheet covers, in px. */
+function sheetCover() {
+  const sheet = $('#details');
+  if (!isPhone() || sheet.hidden || !app.map) return 0;
+  const map = app.map.getContainer().getBoundingClientRect();
+  const covered = map.bottom - sheet.getBoundingClientRect().top;
+  return Math.max(0, Math.min(covered, map.height * 0.8));
+}
+
 // Fly the map to a site and mark it with a pulsing ring for a few seconds,
 // on top of the lasting selection ring. On phones the details sheet covers
 // the lower part of the map, so the site is centred in the part left visible.
-function pinpoint(r, { zoom = PIN_ZOOM } = {}) {
+// (An offset, not camera padding: MapLibre keeps padding for later moves.)
+function pinpoint(r, { zoom = PIN_ZOOM, pulse = true } = {}) {
   const map = app.map;
   if (!map || !r?.located) return;
-  const sheet = isPhone() && !$('#details').hidden ? $('#details').offsetHeight : 0;
+  const animate = pulse && !reducedMotion();
   map.flyTo({
     center: [r.lon, r.lat],
     zoom: Math.max(map.getZoom(), zoom),
-    padding: { top: 0, right: 0, left: 0, bottom: Math.min(sheet, map.getContainer().clientHeight * 0.75) },
-    duration: reducedMotion() ? 0 : 900,
+    offset: [0, -sheetCover() / 2],
+    duration: animate ? 900 : 0,
     essential: true,
   });
-  if (app.pulse) app.pulse.remove();
+  clearPulse();
+  if (!pulse) return;
   const el = document.createElement('div');
   el.className = 'pin-pulse';
   el.setAttribute('aria-hidden', 'true');
   el.style.setProperty('--d', `${markerPx(r.area) + 14}px`);
   el.style.setProperty('--c', SEVERITY_COLORS[r.severity]);
   el.innerHTML = '<span></span><span></span>';
-  app.pulse = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([r.lon, r.lat]).addTo(map);
-  const pulse = app.pulse;
-  setTimeout(() => { pulse.remove(); if (app.pulse === pulse) app.pulse = null; }, 4500);
+  const marker = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([r.lon, r.lat]).addTo(map);
+  app.pulse = { marker, timer: setTimeout(clearPulse, 4500) };
+}
+
+function clearPulse() {
+  if (!app.pulse) return;
+  clearTimeout(app.pulse.timer);
+  app.pulse.marker.remove();
+  app.pulse = null;
+}
+
+// Phones: after "Show on map" the details sheet shrinks to its title bar, so
+// the map can be seen; the Details button opens it again.
+function setDetailsPeek(on) {
+  const sheet = $('#details');
+  sheet.classList.toggle('peek', on);
+  $('#details-expand').setAttribute('aria-expanded', String(!on));
 }
 
 function showOnMap(id) {
   const r = app.byId.get(id);
   if (!r?.located) return;
   if (app.selectedId !== id) select(id, { from: 'list', fly: false });
+  if (isPhone()) {
+    setDetailsPeek(true);
+    $('#details-expand').focus({ preventScroll: true });
+  }
+  // On a narrow map an open legend would cover the middle, where the site lands.
+  if (app.legendOpen && $('#map-wrap').clientWidth < 2 * ($('#legend').offsetWidth + 24)) {
+    app.legendOpen = false;
+    renderLegend();
+  }
   setView('map');
   // Let the map become visible (phones) before measuring and flying.
   requestAnimationFrame(() => { app.map?.resize(); pinpoint(r); });
@@ -462,6 +502,8 @@ function closeDetails() {
   const id = app.selectedId;
   app.selectedId = null;
   $('#details').hidden = true;
+  setDetailsPeek(false);
+  clearPulse();
   markListSelection();
   updateSelectedOnMap();
   const back = app.lastFocus || document.querySelector(`#list button[data-id="${id}"]`);
@@ -491,12 +533,16 @@ function renderDetails() {
   const notes = [];
   if (!r.located) notes.push(`<p class="callout callout-warn">${esc(s.noLocation)}</p>`);
   else notes.push(`<p class="callout">${esc(s.coordAsRecorded)}</p>`);
+  // Near the top, so it is in view without scrolling the phone sheet.
+  const showOnMapBtn = r.located
+    ? `<p class="detail-actions"><button type="button" class="btn btn-primary" data-action="show-on-map" data-id="${r.id}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg><span>${esc(s.showOnMap)}</span></button></p>`
+    : '';
   const maps = r.located
-    ? `<p class="detail-actions"><button type="button" class="btn btn-primary" data-action="show-on-map" data-id="${r.id}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg><span>${esc(s.showOnMap)}</span></button></p>
-      <p class="ext"><a href="https://www.google.com/maps/search/?api=1&amp;query=${r.lat},${r.lon}" target="_blank" rel="noopener">${esc(s.googleMaps)} ↗</a></p>`
+    ? `<p class="ext"><a href="https://www.google.com/maps/search/?api=1&amp;query=${r.lat},${r.lon}" target="_blank" rel="noopener">${esc(s.googleMaps)} ↗</a></p>`
     : '';
   $('#details-body').innerHTML = `
     <div class="detail-kind"><img src="${iconSrc(r.waste.icon, r.area == null, r.severity)}" alt=""><span>${esc(kind)} · ${esc(type || s.unknown)}</span></div>
+    ${showOnMapBtn}
     <dl class="dl">
       ${row(s.regionL, regionName(r.region, app.lang))}
       ${row(s.municipalityL, placeName(r.municipality, app.lang), latin(r.municipality))}
@@ -764,6 +810,7 @@ function bindEvents() {
     if (action === 'reset') { resetAll(); return; }
     if (action === 'close-filters') { closeFilters(); return; }
     if (action === 'close-details') { closeDetails(); return; }
+    if (action === 'expand-details') { setDetailsPeek(false); $('#details').focus({ preventScroll: true }); return; }
     if (action === 'show-on-map') { showOnMap(Number(e.target.closest('[data-id]').dataset.id)); return; }
     if (action === 'skopje') {
       app.state.regions = new Set([SKOPJE_REGION]);
@@ -855,6 +902,7 @@ function bindEvents() {
 
 function setView(view) {
   $('.layout').dataset.view = view;
+  if (view === 'list') setDetailsPeek(false); // back to the details being read
   document.querySelectorAll('.view-switch button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
   if (view === 'map' && app.mapReady) requestAnimationFrame(() => app.map.resize());
 }

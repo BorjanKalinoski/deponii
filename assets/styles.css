@@ -48,6 +48,8 @@
   --cluster-ink: #ffffff;
   --cluster-glow: rgba(204, 47, 31, 0.22);
   --ctrl-icon-filter: none;
+  --pulse-casing: rgba(255, 255, 255, 0.95);
+  --pulse-filter: none;
   --font: 'Plex', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
   --step--2: 0.78125rem;
   --step--1: 0.8125rem;
@@ -98,6 +100,8 @@
     --cluster-ink: #ffffff;
     --cluster-glow: rgba(204, 47, 31, 0.32);
     --ctrl-icon-filter: invert(0.9);
+    --pulse-casing: rgba(0, 0, 0, 0.65);
+    --pulse-filter: brightness(1.75) saturate(1.2);
     color-scheme: dark;
 }
 }
@@ -137,6 +141,8 @@
   --cluster-ink: #ffffff;
   --cluster-glow: rgba(204, 47, 31, 0.32);
   --ctrl-icon-filter: invert(0.9);
+  --pulse-casing: rgba(0, 0, 0, 0.65);
+  --pulse-filter: brightness(1.75) saturate(1.2);
   color-scheme: dark;
 }
 
@@ -341,15 +347,18 @@ legend { font-weight: 600; padding: 0; margin-bottom: 8px; font-size: var(--step
 .view-switch { display: none; }
 .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 60; background: var(--toast-bg); color: var(--toast-ink); padding: 10px 16px; border-radius: var(--radius); font-size: var(--step--1); }
 
-/* Phones and narrow tablets */
-.detail-actions { margin: 14px 0 0; }
+/* Show on map: the button in the details, and the pulse it leaves on the map. */
+#details-expand { display: none; }
+.detail-actions { margin: 12px 0 4px; }
 .detail-actions .btn { width: 100%; justify-content: center; gap: 8px; min-height: 44px; }
 .detail-actions svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .pin-pulse { position: relative; width: var(--d); height: var(--d); pointer-events: none; }
-.pin-pulse span { position: absolute; inset: 0; border-radius: 50%; border: 3px solid var(--c); box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9); animation: pin-pulse 1.5s ease-out infinite; }
+/* A ring in the site's severity colour, cased so it reads on either basemap. */
+.pin-pulse span { position: absolute; inset: 0; border-radius: 50%; border: 4px solid var(--c); box-shadow: 0 0 0 2px var(--pulse-casing), inset 0 0 0 2px var(--pulse-casing); filter: var(--pulse-filter); animation: pin-pulse 1.5s ease-out infinite; }
 .pin-pulse span + span { animation-delay: 0.75s; }
 @keyframes pin-pulse { from { transform: scale(1); opacity: 1; } to { transform: scale(2.6); opacity: 0; } }
 
+/* Phones and narrow tablets */
 @media (max-width: 767px) {
   :root { --topbar: 56px; }
   .tagline { display: none; }
@@ -377,6 +386,11 @@ legend { font-weight: 600; padding: 0; margin-bottom: 8px; font-size: var(--step
   .legend { bottom: 12px; }
   .legend:not(.open) #legend-body { display: none; }
   .map-float { top: 10px; }
+  /* After "Show on map": only the sheet's title bar, above the Map/List switch. */
+  .details.peek { max-height: none; bottom: calc(var(--switch) + env(safe-area-inset-bottom, 0px)); padding-bottom: 0; }
+  .details.peek .panel-body { display: none; }
+  .details.peek .panel-head { border-bottom: 0; }
+  .details.peek #details-expand { display: inline-flex; }
 }
 @media (min-width: 768px) {
   .legend.closed #legend-body { display: none; }
