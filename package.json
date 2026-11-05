@@ -10,7 +10,8 @@
     "test:e2e": "playwright test",
     "test:all": "node --test && playwright test",
     "vendor": "node scripts/vendor.mjs",
-    "vendor:check": "node scripts/vendor.mjs --check"
+    "vendor:check": "node scripts/vendor.mjs --check",
+    "security": "node scripts/security-check.mjs"
   },
   "license": "MIT",
   "dependencies": {
