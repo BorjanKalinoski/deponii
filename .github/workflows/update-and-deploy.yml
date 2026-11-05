@@ -5,6 +5,11 @@ on:
     # Once a day, 04:17 UTC (05:17 / 06:17 in Skopje).
     - cron: '17 4 * * *'
   workflow_dispatch:
+    inputs:
+      cancel_stuck:
+        description: 'Commit SHA of a stuck Pages deployment to cancel first (optional)'
+        required: false
+        default: ''
   push:
     branches: [main]
 
@@ -49,6 +54,16 @@ jobs:
             git commit -m "Data check $(date -u +%Y-%m-%dT%H:%MZ)"
             git push
           fi
+
+      # A Pages deployment left "in progress" blocks every later one.
+      - name: Cancel a stuck Pages deployment
+        if: inputs.cancel_stuck != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X POST "repos/${{ github.repository }}/pages/deployments/${{ inputs.cancel_stuck }}/cancel"
+          sleep 10
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
