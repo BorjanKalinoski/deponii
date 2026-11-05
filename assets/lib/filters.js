@@ -8,11 +8,33 @@ export function emptyState() {
     municipalities: new Set(),
     types: new Set(),
     materials: new Set(), // material codes plus 'unknown' and 'other'
+    severity: new Set(), // '1'..'4'
     areaMin: null,
     areaMax: null,
     bounds: null, // [west, south, east, north] from "Search this area"
     sort: 'area', // 'area' | 'volume'
   };
+}
+
+/**
+ * The state without region, municipality and type choices that no record has
+ * (from an old or mistyped link), so they can't silently hide every result.
+ */
+export function dropUnknownChoices(s, records) {
+  const known = (key) => new Set(records.map((r) => r[key]));
+  const keep = (set, codes) => new Set([...set].filter((c) => codes.has(c)));
+  return {
+    ...s,
+    regions: keep(s.regions, known('regionCode')),
+    municipalities: keep(s.municipalities, known('municipalityCode')),
+    types: keep(s.types, known('typeCode')),
+  };
+}
+
+/** How many filter categories are in use, for the badge on the Filters button. */
+export function activeFilterCount(s) {
+  return [s.regions.size, s.municipalities.size, s.types.size, s.materials.size,
+    s.severity.size, isAreaRangeActive(s)].filter(Boolean).length;
 }
 
 export function isAreaRangeActive(s) {
@@ -22,7 +44,7 @@ export function isAreaRangeActive(s) {
 export function hasActiveFilters(s) {
   return Boolean(
     s.q.trim() || s.regions.size || s.municipalities.size || s.types.size ||
-    s.materials.size || isAreaRangeActive(s) || s.bounds,
+    s.materials.size || s.severity.size || isAreaRangeActive(s) || s.bounds,
   );
 }
 
@@ -49,6 +71,7 @@ export function applyFilters(records, s) {
     if (s.municipalities.size && !s.municipalities.has(r.municipalityCode)) return false;
     if (s.types.size && !s.types.has(r.typeCode)) return false;
     if (s.materials.size && !matchesMaterials(r, s.materials)) return false;
+    if (s.severity.size && !s.severity.has(String(r.severity))) return false;
     if (rangeOn) {
       if (r.area == null) return false;
       if (s.areaMin != null && r.area < s.areaMin) return false;

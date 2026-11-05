@@ -4,23 +4,28 @@ import { buildRecords, TYPE_ORDER } from './lib/records.js';
 import { MATERIALS } from './lib/materials.js';
 import {
   applyFilters, sortRecords, countRecords, hasActiveFilters, isAreaRangeActive, emptyState,
+  dropUnknownChoices, activeFilterCount,
 } from './lib/filters.js';
 import { toQuery, fromQuery } from './lib/urlstate.js';
 import {
   UI, MATERIAL_LABELS, TYPE_LABELS, placeName, regionName, phrase, fmtNumber, fmtDateTime,
 } from './lib/i18n.js';
 import { searchKey } from './lib/translit.js';
-import { ICON_KINDS, markerSvg, markerPx, imageName, MIN_PX, MAX_PX, UNKNOWN_PX } from './lib/icons.js';
+import { ICON_KINDS, markerSvg, markerPx, imageName, MIN_PX, MAX_PX, UNKNOWN_PX, NEUTRAL } from './lib/icons.js';
+import { SEVERITY_COLORS, SEVERITY_INK, SEVERITY_HALO, SEVERITY_LEVELS } from './lib/severity.js';
 import { THEME_KEY, THEME_COLOR, MAP_THEMES, resolveTheme, basemapPaint } from './lib/theme.js';
 
 const MK_BOUNDS = [[20.45, 40.84], [23.04, 42.38]];
 const SKOPJE_REGION = 'skopski';
 const CLUSTER_MAX_ZOOM = 11;
 const SELECT_ZOOM = 13;
+const PIN_ZOOM = 15; // close enough that the site is never inside a cluster
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const isPhone = () => window.matchMedia('(max-width: 767px)').matches;
+// Phones show either the map or the list; wider screens always show both.
+const mapVisible = () => !isPhone() || $('.layout').dataset.view === 'map';
 
 const initial = fromQuery(location.search);
 const darkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
@@ -45,6 +50,7 @@ const app = {
   mapLoadedOnce: false,
   styleGen: 0, // counts basemap loads, so a superseded one stops adding layers
   popup: null,
+  pulse: null, // the temporary pulsing ring from pinpoint()
   // Open only where the map is wide enough that the legend won't cover the country.
   legendOpen: window.innerWidth - 400 >= 900,
   muniFilter: '',
@@ -52,10 +58,13 @@ const app = {
 };
 const t = () => UI[app.lang];
 const iconUrl = new Map();
-function iconSrc(kind, unknownSize = false) {
-  const key = imageName(kind, unknownSize);
+// `level` is the site's severity (1–4); 0 draws the neutral symbol used where
+// only the waste material matters (filters, the legend's material list).
+function iconSrc(kind, unknownSize = false, level = 0) {
+  const key = imageName(kind, unknownSize, level);
   if (!iconUrl.has(key)) {
-    iconUrl.set(key, 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markerSvg(kind, { unknownSize })));
+    const style = level ? { color: SEVERITY_COLORS[level], ink: SEVERITY_INK[level] } : { color: NEUTRAL };
+    iconUrl.set(key, 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markerSvg(kind, { unknownSize, ...style })));
   }
   return iconUrl.get(key);
 }
@@ -75,6 +84,7 @@ async function loadData() {
     app.meta = metaRes.ok ? await metaRes.json() : null;
     app.records = buildRecords(feed.rows);
     app.byId = new Map(app.records.map((r) => [r.id, r]));
+    app.state = dropUnknownChoices(app.state, app.records);
     app.dataStatus = 'ready';
   } catch (err) {
     console.error('Data unavailable:', err);
@@ -131,8 +141,10 @@ function renderStaticText() {
   $('#tagline').textContent = s.tagline;
   $('#copy-link-label').textContent = s.copyLink;
   $('#copy-link').setAttribute('aria-label', s.copyLink);
+  // The button names the other language; phones show its short form.
   const lt = $('#lang-toggle');
-  lt.textContent = s.lang;
+  lt.innerHTML = `<span class="lang-long">${esc(s.lang)}</span><span class="lang-short" aria-hidden="true">${esc(s.langShort)}</span>`;
+  lt.setAttribute('aria-label', s.lang);
   lt.lang = s.langCode;
   renderThemeToggle();
   $('#q-label').textContent = s.searchLabel;
@@ -184,11 +196,15 @@ function renderStatus() {
   } else if (app.dataStatus === 'unavailable') {
     counts.textContent = s.noData;
   } else {
-    counts.innerHTML = esc(s.counts(c.total, c.located, c.unlocated))
-      .replace(/^([\d\s.,]+)/, '<strong>$1</strong>');
+    // Lines break only between the three counts, never inside one.
+    const text = s.counts(c.total, c.located, c.unlocated).split(' · ').map((part) => part.replace(/ /g, '\u00a0')).join(' · ');
+    counts.innerHTML = esc(text).replace(/^([\d\u202f.,]+)/, '<strong>$1</strong>');
   }
   status.hidden = app.dataStatus !== 'unavailable';
   status.textContent = s.unavailable;
+  // Phones open on the map, where the list's message can't be seen.
+  $('#data-error').hidden = app.dataStatus !== 'unavailable';
+  $('#data-error').textContent = s.unavailable;
 
   const last = $('#last-update');
   if (app.meta?.checkedAt) {
@@ -199,8 +215,7 @@ function renderStatus() {
   $('#empty').hidden = !(app.dataStatus === 'ready' && app.filtered.length === 0);
   $('#filters-done').textContent = s.showResults(c.total);
 
-  const active = [app.state.regions.size, app.state.municipalities.size, app.state.types.size,
-    app.state.materials.size, isAreaRangeActive(app.state) ? 1 : 0].filter(Boolean).length;
+  const active = activeFilterCount(app.state);
   const badge = $('#filters-badge');
   badge.hidden = active === 0;
   badge.textContent = String(active);
@@ -226,7 +241,7 @@ function renderList() {
     const tags = [`<span class="tag">${esc(type)}</span>`, `<span class="tag">${esc(kind)}</span>`];
     if (!r.located) tags.push(`<span class="tag tag-warn">${esc(s.noLocation.split(/[,.]/)[0])}</span>`);
     return `<li class="item"><button type="button" data-id="${r.id}" aria-current="${r.id === app.selectedId}">
-      <img src="${iconSrc(r.waste.icon, r.area == null)}" alt="">
+      <img src="${iconSrc(r.waste.icon, r.area == null, r.severity)}" alt="">
       <span class="item-name">${esc(recordTitle(r))}<span class="item-place">${esc(place)}</span></span>
       <span class="item-nums">${measure(r.area, s.m2)}<br>${measure(r.volume, s.m3)}</span>
       <span class="item-tags">${tags.join('')}</span>
@@ -263,6 +278,7 @@ function renderChips() {
   st.municipalities.forEach((c) => out.push(chip(muniLabel(c), 'municipality', c)));
   st.types.forEach((c) => out.push(chip(TYPE_LABELS[app.lang][c] || c, 'type', c)));
   st.materials.forEach((c) => out.push(chip(MATERIAL_LABELS[app.lang][c] || c, 'material', c)));
+  [...st.severity].sort().reverse().forEach((c) => out.push(chip(s.severityLevels[c], 'severity', c)));
   if (isAreaRangeActive(st)) {
     out.push(chip(s.areaRange(st.areaMin != null ? fmtNumber(st.areaMin, app.lang) : null,
       st.areaMax != null ? fmtNumber(st.areaMax, app.lang) : null), 'area', ''));
@@ -276,10 +292,13 @@ function renderChips() {
 
 /* ---------- Filters panel ---------- */
 
-function option(name, value, label, checked, count, icon) {
+// `mark` is optional HTML shown before the label: a symbol or a colour swatch.
+function option(name, value, label, checked, count, mark = '') {
   const id = `f-${name}-${value}`;
-  return `<label class="opt" for="${esc(id)}"><input type="checkbox" id="${esc(id)}" name="${name}" value="${esc(value)}"${checked ? ' checked' : ''}>${icon ? `<img src="${icon}" alt="">` : ''}<span>${esc(label)}</span><span class="n">${count}</span></label>`;
+  return `<label class="opt" for="${esc(id)}"><input type="checkbox" id="${esc(id)}" name="${name}" value="${esc(value)}"${checked ? ' checked' : ''}>${mark}<span>${esc(label)}</span><span class="n">${count}</span></label>`;
 }
+const symbol = (src) => `<img src="${src}" alt="">`;
+const swatch = (level) => `<span class="sev-swatch" data-level="${level}" style="background:${SEVERITY_COLORS[level]}"></span>`;
 
 function renderFilters() {
   const s = t();
@@ -315,12 +334,18 @@ function renderFilters() {
 
   const matCount = (m) => count((r) => r.waste.materials.includes(m));
   const materialOpts = MATERIALS.filter((m) => matCount(m) > 0)
-    .map((m) => option('material', m, MATERIAL_LABELS[app.lang][m], st.materials.has(m), matCount(m), iconSrc(m)));
+    .map((m) => option('material', m, MATERIAL_LABELS[app.lang][m], st.materials.has(m), matCount(m), symbol(iconSrc(m))));
   const otherN = count((r) => r.waste.other);
-  if (otherN) materialOpts.push(option('material', 'other', MATERIAL_LABELS[app.lang].other, st.materials.has('other'), otherN, iconSrc('other')));
-  materialOpts.push(option('material', 'unknown', MATERIAL_LABELS[app.lang].unknown, st.materials.has('unknown'), count((r) => r.waste.unknown), iconSrc('unknown')));
+  if (otherN) materialOpts.push(option('material', 'other', MATERIAL_LABELS[app.lang].other, st.materials.has('other'), otherN, symbol(iconSrc('other'))));
+  materialOpts.push(option('material', 'unknown', MATERIAL_LABELS[app.lang].unknown, st.materials.has('unknown'), count((r) => r.waste.unknown), symbol(iconSrc('unknown'))));
+
+  const sevHtml = [...SEVERITY_LEVELS].reverse()
+    .filter((l) => count((r) => r.severity === l) > 0)
+    .map((l) => option('severity', String(l), s.severityLevels[l], st.severity.has(String(l)), count((r) => r.severity === l), swatch(l)))
+    .join('');
 
   $('#filters-body').innerHTML = `
+    <fieldset><legend>${esc(s.severity)}</legend>${sevHtml}<p class="hint">${esc(s.severityNote)}</p></fieldset>
     <fieldset><legend>${esc(s.region)}</legend>
       <button type="button" class="btn btn-outline shortcut" data-action="skopje">${esc(s.skopjeShortcut)}</button>
       ${regionHtml}
@@ -363,7 +388,7 @@ function filterMunicipalityList() {
 function syncFilterInputs() {
   const st = app.state;
   document.querySelectorAll('#filters-body input[type="checkbox"]').forEach((cb) => {
-    const set = { region: st.regions, municipality: st.municipalities, type: st.types, material: st.materials }[cb.name];
+    const set = { region: st.regions, municipality: st.municipalities, type: st.types, material: st.materials, severity: st.severity }[cb.name];
     if (set) cb.checked = set.has(cb.value);
   });
   const min = $('#area-min');
@@ -393,13 +418,15 @@ function select(id, { from = 'list', fly = true } = {}) {
   const r = app.byId.get(id);
   if (!r) return;
   app.selectedId = id;
+  clearPulse();
+  setDetailsPeek(false);
   markListSelection();
   renderDetails();
   if (app.popup) { app.popup.remove(); app.popup = null; }
   updateSelectedOnMap();
-  if (fly && r.located && app.mapReady) {
-    app.map.flyTo({ center: [r.lon, r.lat], zoom: Math.max(app.map.getZoom(), SELECT_ZOOM), duration: 700, essential: true });
-  }
+  // On phones the list hides the map: move it along quietly, without a pulse
+  // nobody would see.
+  if (fly && r.located) pinpoint(r, { zoom: SELECT_ZOOM, pulse: mapVisible() });
   if (from === 'map') {
     const btn = document.querySelector(`#list button[data-id="${id}"]`);
     btn?.scrollIntoView({ block: 'nearest' });
@@ -409,11 +436,84 @@ function select(id, { from = 'list', fly = true } = {}) {
   $('#details').focus({ preventScroll: true });
 }
 
+const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** How much of the bottom of the map the phone details sheet covers, in px. */
+function sheetCover() {
+  const sheet = $('#details');
+  if (!isPhone() || sheet.hidden || !app.map) return 0;
+  const map = app.map.getContainer().getBoundingClientRect();
+  const covered = map.bottom - sheet.getBoundingClientRect().top;
+  return Math.max(0, Math.min(covered, map.height * 0.8));
+}
+
+// Fly the map to a site and mark it with a pulsing ring for a few seconds,
+// on top of the lasting selection ring. On phones the details sheet covers
+// the lower part of the map, so the site is centred in the part left visible.
+// (An offset, not camera padding: MapLibre keeps padding for later moves.)
+function pinpoint(r, { zoom = PIN_ZOOM, pulse = true } = {}) {
+  const map = app.map;
+  if (!map || !r?.located) return;
+  const animate = pulse && !reducedMotion();
+  map.flyTo({
+    center: [r.lon, r.lat],
+    zoom: Math.max(map.getZoom(), zoom),
+    offset: [0, -sheetCover() / 2],
+    duration: animate ? 900 : 0,
+    essential: true,
+  });
+  clearPulse();
+  if (!pulse) return;
+  const el = document.createElement('div');
+  el.className = 'pin-pulse';
+  el.setAttribute('aria-hidden', 'true');
+  el.style.setProperty('--d', `${markerPx(r.area) + 14}px`);
+  el.style.setProperty('--c', SEVERITY_COLORS[r.severity]);
+  el.innerHTML = '<span></span><span></span>';
+  const marker = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([r.lon, r.lat]).addTo(map);
+  app.pulse = { marker, timer: setTimeout(clearPulse, 4500) };
+}
+
+function clearPulse() {
+  if (!app.pulse) return;
+  clearTimeout(app.pulse.timer);
+  app.pulse.marker.remove();
+  app.pulse = null;
+}
+
+// Phones: after "Show on map" the details sheet shrinks to its title bar, so
+// the map can be seen; the Details button opens it again.
+function setDetailsPeek(on) {
+  const sheet = $('#details');
+  sheet.classList.toggle('peek', on);
+  $('#details-expand').setAttribute('aria-expanded', String(!on));
+}
+
+function showOnMap(id) {
+  const r = app.byId.get(id);
+  if (!r?.located) return;
+  if (app.selectedId !== id) select(id, { from: 'list', fly: false });
+  if (isPhone()) {
+    setDetailsPeek(true);
+    $('#details-expand').focus({ preventScroll: true });
+  }
+  // On a narrow map an open legend would cover the middle, where the site lands.
+  if (app.legendOpen && $('#map-wrap').clientWidth < 2 * ($('#legend').offsetWidth + 24)) {
+    app.legendOpen = false;
+    renderLegend();
+  }
+  setView('map');
+  // Let the map become visible (phones) before measuring and flying.
+  requestAnimationFrame(() => { app.map?.resize(); pinpoint(r); });
+}
+
 function closeDetails() {
   if ($('#details').hidden && app.selectedId == null) return;
   const id = app.selectedId;
   app.selectedId = null;
   $('#details').hidden = true;
+  setDetailsPeek(false);
+  clearPulse();
   markListSelection();
   updateSelectedOnMap();
   const back = app.lastFocus || document.querySelector(`#list button[data-id="${id}"]`);
@@ -443,11 +543,16 @@ function renderDetails() {
   const notes = [];
   if (!r.located) notes.push(`<p class="callout callout-warn">${esc(s.noLocation)}</p>`);
   else notes.push(`<p class="callout">${esc(s.coordAsRecorded)}</p>`);
+  // Near the top, so it is in view without scrolling the phone sheet.
+  const showOnMapBtn = r.located
+    ? `<p class="detail-actions"><button type="button" class="btn btn-primary" data-action="show-on-map" data-id="${r.id}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg><span>${esc(s.showOnMap)}</span></button></p>`
+    : '';
   const maps = r.located
     ? `<p class="ext"><a href="https://www.google.com/maps/search/?api=1&amp;query=${r.lat},${r.lon}" target="_blank" rel="noopener">${esc(s.googleMaps)} ↗</a></p>`
     : '';
   $('#details-body').innerHTML = `
-    <div class="detail-kind"><img src="${iconSrc(r.waste.icon, r.area == null)}" alt=""><span>${esc(kind)} · ${esc(type || s.unknown)}</span></div>
+    <div class="detail-kind"><img src="${iconSrc(r.waste.icon, r.area == null, r.severity)}" alt=""><span>${esc(kind)} · ${esc(type || s.unknown)}<span class="detail-sev">${esc(s.severity)}: ${esc(s.severityLevels[r.severity])}</span></span></div>
+    ${showOnMapBtn}
     <dl class="dl">
       ${row(s.regionL, regionName(r.region, app.lang))}
       ${row(s.municipalityL, placeName(r.municipality, app.lang), latin(r.municipality))}
@@ -480,9 +585,14 @@ function renderLegend() {
   const sizes = [[10, '10'], [1000, '1 000'], [100000, '100 000']]
     .map(([a, label]) => { const px = markerPx(a); return `<figure><span class="disc" style="width:${px}px;height:${px}px"></span><figcaption>${label} m²</figcaption></figure>`; })
     .join('');
+  const sevRows = [...SEVERITY_LEVELS].reverse().map((l) =>
+    `<li>${swatch(l)}<span>${esc(s.severityLevels[l])}</span></li>`).join('');
   $('#legend-body').innerHTML = `
+    <h3>${esc(s.severity)}</h3>
+    <ul>${sevRows}</ul>
+    <p class="legend-note">${esc(s.severityNote)}</p>
     <h3>${esc(s.material)}</h3>
-    <ul>${kinds.map((k) => `<li><img src="${iconSrc(k)}" alt=""><span>${esc(MATERIAL_LABELS[app.lang][k])}</span></li>`).join('')}</ul>
+    <ul class="kinds">${kinds.map((k) => `<li><img src="${iconSrc(k)}" alt=""><span>${esc(MATERIAL_LABELS[app.lang][k])}</span></li>`).join('')}</ul>
     <h3>${esc(s.legendSize)}</h3>
     <div class="sizes">${sizes}<figure><span class="disc disc-u" style="width:${UNKNOWN_PX}px;height:${UNKNOWN_PX}px"></span><figcaption>${esc(s.unknownSize)}</figcaption></figure></div>
     <ul style="margin-top:10px"><li><span class="cluster-sample">12</span><span>${esc(s.clusterNote)}</span></li></ul>
@@ -499,7 +609,7 @@ function featureCollection() {
       return {
         type: 'Feature',
         geometry: { type: 'Point', coordinates: [r.lon, r.lat] },
-        properties: { id: r.id, img: imageName(r.waste.icon, r.area == null), scale: px / 32, px, sortKey: -px },
+        properties: { id: r.id, img: imageName(r.waste.icon, r.area == null, r.severity), sev: r.severity, scale: px / 32, px, sortKey: -(r.severity * 1000 + px) },
       };
     }),
   };
@@ -536,11 +646,13 @@ let markerImages = null;
 function decodeMarkerImages() {
   if (!markerImages) {
     const jobs = [];
-    for (const kind of ICON_KINDS) {
-      for (const unknownSize of [false, true]) {
-        const img = new Image(64, 64);
-        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markerSvg(kind, { unknownSize, px: 64 }));
-        jobs.push(img.decode().then(() => [imageName(kind, unknownSize), img]));
+    for (const level of SEVERITY_LEVELS) {
+      for (const kind of ICON_KINDS) {
+        for (const unknownSize of [false, true]) {
+          const img = new Image(64, 64);
+          img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markerSvg(kind, { unknownSize, px: 64, color: SEVERITY_COLORS[level], ink: SEVERITY_INK[level] }));
+          jobs.push(img.decode().then(() => [imageName(kind, unknownSize, level), img]));
+        }
       }
     }
     markerImages = Promise.all(jobs);
@@ -569,17 +681,22 @@ async function addSiteLayers(map) {
   const images = await decodeMarkerImages();
   if (gen !== app.styleGen || map.getSource('sites')) return; // a newer basemap took over
   for (const [name, img] of images) if (!map.hasImage(name)) map.addImage(name, img, { pixelRatio: 2 });
-  map.addSource('sites', { type: 'geojson', data: featureCollection(), cluster: true, clusterMaxZoom: CLUSTER_MAX_ZOOM, clusterRadius: 44 });
+  map.addSource('sites', { type: 'geojson', data: featureCollection(), cluster: true, clusterMaxZoom: CLUSTER_MAX_ZOOM, clusterRadius: 44,
+    clusterProperties: { maxSev: ['max', ['get', 'sev']] } });
   map.addSource('selected', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   const clusterRadius = ['step', ['get', 'point_count'], 15, 10, 18, 30, 22, 80, 26];
+  // A cluster takes the colour of the most severe site inside it, and the
+  // number on it the matching ink (dark on amber and orange, white on red).
+  const byMaxSev = (colours) => ['match', ['get', 'maxSev'], 1, colours[1], 2, colours[2], 3, colours[3], colours[4]];
+  const clusterColor = byMaxSev(SEVERITY_COLORS);
   map.addLayer({
     id: 'cluster-glow', type: 'circle', source: 'sites', filter: ['has', 'point_count'],
-    paint: { 'circle-radius': ['+', clusterRadius, 5], 'circle-color': c.clusterGlow },
+    paint: { 'circle-radius': ['+', clusterRadius, 6], 'circle-color': clusterColor, 'circle-opacity': c.clusterGlowOpacity },
   });
   map.addLayer({
     id: 'clusters', type: 'circle', source: 'sites', filter: ['has', 'point_count'],
     paint: {
-      'circle-color': c.cluster,
+      'circle-color': clusterColor,
       'circle-stroke-color': c.clusterStroke,
       'circle-stroke-width': 2.5,
       'circle-radius': clusterRadius,
@@ -588,7 +705,7 @@ async function addSiteLayers(map) {
   map.addLayer({
     id: 'cluster-count', type: 'symbol', source: 'sites', filter: ['has', 'point_count'],
     layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-font': ['Noto Sans Bold'], 'text-size': 13, 'text-allow-overlap': true },
-    paint: { 'text-color': c.clusterText },
+    paint: { 'text-color': byMaxSev(SEVERITY_INK), 'text-halo-color': byMaxSev(SEVERITY_HALO), 'text-halo-width': 1 },
   });
   map.addLayer({
     id: 'points', type: 'symbol', source: 'sites', filter: ['!', ['has', 'point_count']],
@@ -673,7 +790,7 @@ function openChooser(ids, lngLat) {
   const el = document.createElement('div');
   el.className = 'chooser';
   el.innerHTML = `<p>${esc(t().here(recs.length))}</p>` + recs.map((r) =>
-    `<button type="button" data-id="${r.id}"><img src="${iconSrc(r.waste.icon, r.area == null)}" alt=""><span>${esc(recordTitle(r))}${r.area != null ? ` · ${esc(fmtNumber(r.area, app.lang))} m²` : ''}</span></button>`).join('');
+    `<button type="button" data-id="${r.id}"><img src="${iconSrc(r.waste.icon, r.area == null, r.severity)}" alt=""><span>${esc(recordTitle(r))}${r.area != null ? ` · ${esc(fmtNumber(r.area, app.lang))} m²` : ''}</span></button>`).join('');
   el.addEventListener('click', (ev) => {
     const b = ev.target.closest('button[data-id]');
     if (b) select(Number(b.dataset.id), { from: 'map', fly: false });
@@ -704,6 +821,8 @@ function bindEvents() {
     if (action === 'reset') { resetAll(); return; }
     if (action === 'close-filters') { closeFilters(); return; }
     if (action === 'close-details') { closeDetails(); return; }
+    if (action === 'expand-details') { setDetailsPeek(false); $('#details').focus({ preventScroll: true }); return; }
+    if (action === 'show-on-map') { showOnMap(Number(e.target.closest('[data-id]').dataset.id)); return; }
     if (action === 'skopje') {
       app.state.regions = new Set([SKOPJE_REGION]);
       update({ fit: 'results' });
@@ -718,6 +837,7 @@ function bindEvents() {
         municipality: () => st.municipalities.delete(v),
         type: () => st.types.delete(v),
         material: () => st.materials.delete(v),
+        severity: () => st.severity.delete(v),
         area: () => { st.areaMin = null; st.areaMax = null; },
         bounds: () => { st.bounds = null; },
       })[chipEl.dataset.chip]?.();
@@ -732,7 +852,7 @@ function bindEvents() {
     const cb = e.target;
     if (cb.type !== 'checkbox') return;
     const st = app.state;
-    const set = { region: st.regions, municipality: st.municipalities, type: st.types, material: st.materials }[cb.name];
+    const set = { region: st.regions, municipality: st.municipalities, type: st.types, material: st.materials, severity: st.severity }[cb.name];
     if (!set) return;
     toggleInSet(set, cb.value, cb.checked);
     const focusMap = (cb.name === 'municipality' || cb.name === 'region') && cb.checked;
@@ -793,6 +913,7 @@ function bindEvents() {
 
 function setView(view) {
   $('.layout').dataset.view = view;
+  if (view === 'list') setDetailsPeek(false); // back to the details being read
   document.querySelectorAll('.view-switch button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
   if (view === 'map' && app.mapReady) requestAnimationFrame(() => app.map.resize());
 }
@@ -806,6 +927,9 @@ function toast(msg) {
 }
 
 /* ---------- Start ---------- */
+
+// Read-only handle for the end-to-end tests (e2e/fixtures.mjs).
+window.__deponii = app;
 
 applyTheme(app.theme);
 renderStaticText();

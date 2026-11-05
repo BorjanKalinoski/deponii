@@ -6,7 +6,9 @@
     "doc": "docs"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "test:e2e": "playwright test",
+    "test:all": "node --test && playwright test"
   },
   "license": "MIT",
   "dependencies": {
@@ -14,5 +16,8 @@
     "maplibre-gl": "5.24.0"
   },
   "private": true,
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
 }

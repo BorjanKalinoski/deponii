@@ -15,28 +15,24 @@ export const THEME_COLOR = { light: '#ffffff', dark: '#161c1e' };
 
 const OPENFREEMAP_STYLES = 'https://tiles.openfreemap.org/styles/';
 
-// Colours of the map's own layers (clusters, selection ring) per theme. The
-// selection ring is a neutral two-tone (dark on light casing, or the reverse)
-// so it reads against any marker fill, whatever the fill encodes.
-// `positron` keeps the light map quiet so the waste colours carry; `dark` is
-// neutral near-black, so every marker hue keeps its contrast (the blue-grey
-// `fiord` would swallow the blue and teal markers).
+// Colours of the map's own layers (cluster rims, selection ring) per theme.
+// Cluster fills and numbers come from severity.js: a cluster shows its worst
+// site. The selection ring is a neutral two-tone (dark on light casing, or the
+// reverse) so it reads against any marker fill, whatever the fill encodes.
+// `positron` keeps the light map quiet so the severity colours carry; `dark`
+// is neutral near-black, so every marker hue keeps its contrast.
 export const MAP_THEMES = {
   light: {
     style: `${OPENFREEMAP_STYLES}positron`,
-    cluster: '#0e6655',
     clusterStroke: '#ffffff',
-    clusterText: '#ffffff',
-    clusterGlow: 'rgba(14, 102, 85, 0.22)',
+    clusterGlowOpacity: 0.22,
     selected: '#172022',
     selectedCasing: '#ffffff',
   },
   dark: {
     style: `${OPENFREEMAP_STYLES}dark`,
-    cluster: '#13715e',
-    clusterStroke: '#e8eeec',
-    clusterText: '#ffffff',
-    clusterGlow: 'rgba(84, 201, 173, 0.28)',
+    clusterStroke: '#f3e6e4',
+    clusterGlowOpacity: 0.32,
     selected: '#ffffff',
     selectedCasing: '#0c0c0c',
   },
