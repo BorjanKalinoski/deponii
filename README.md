@@ -15,6 +15,10 @@ passes. A sign-in page, an error page or a feed with unexpected columns is rejec
 the last good copy stays. The site shows the time of the last successful check. To
 update immediately, run the workflow by hand from the repository's **Actions** tab.
 
+GitHub Pages publishes straight from the `main` branch (Settings → Pages → Deploy from
+a branch: `main`, `/ (root)`), so every push to `main`, including the daily data
+commit, updates the live site within a minute or two.
+
 See `CONTEXT.md` for the project's vocabulary and `docs/adr/` for why it is built this way.
 
 ## Working on it
