@@ -71,6 +71,10 @@ _Avoid_: Waste type, waste category
 A dominant-waste description that names two or more waste materials, or calls itself mixed ("Мешан комунален"). Word order does not matter.
 _Avoid_: Combined, multiple
 
+**Severity**:
+A display scale from 1 to 4 that makes bigger sites, and active non-compliant landfills, look more alarming on the map. It is derived only from recorded area and landfill type; it is not a measured environmental or health risk.
+_Avoid_: Risk, danger rating, hazard score
+
 **Unknown waste**:
 The state of a recorded site whose dominant-waste description is absent.
 
