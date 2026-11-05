@@ -4,6 +4,7 @@ import { buildRecords, TYPE_ORDER } from './lib/records.js';
 import { MATERIALS } from './lib/materials.js';
 import {
   applyFilters, sortRecords, countRecords, hasActiveFilters, isAreaRangeActive, emptyState,
+  dropUnknownChoices, activeFilterCount,
 } from './lib/filters.js';
 import { toQuery, fromQuery } from './lib/urlstate.js';
 import {
@@ -83,6 +84,7 @@ async function loadData() {
     app.meta = metaRes.ok ? await metaRes.json() : null;
     app.records = buildRecords(feed.rows);
     app.byId = new Map(app.records.map((r) => [r.id, r]));
+    app.state = dropUnknownChoices(app.state, app.records);
     app.dataStatus = 'ready';
   } catch (err) {
     console.error('Data unavailable:', err);
@@ -207,8 +209,7 @@ function renderStatus() {
   $('#empty').hidden = !(app.dataStatus === 'ready' && app.filtered.length === 0);
   $('#filters-done').textContent = s.showResults(c.total);
 
-  const active = [app.state.regions.size, app.state.municipalities.size, app.state.types.size,
-    app.state.materials.size, isAreaRangeActive(app.state) ? 1 : 0].filter(Boolean).length;
+  const active = activeFilterCount(app.state);
   const badge = $('#filters-badge');
   badge.hidden = active === 0;
   badge.textContent = String(active);
@@ -285,10 +286,13 @@ function renderChips() {
 
 /* ---------- Filters panel ---------- */
 
-function option(name, value, label, checked, count, icon) {
+// `mark` is optional HTML shown before the label: a symbol or a colour swatch.
+function option(name, value, label, checked, count, mark = '') {
   const id = `f-${name}-${value}`;
-  return `<label class="opt" for="${esc(id)}"><input type="checkbox" id="${esc(id)}" name="${name}" value="${esc(value)}"${checked ? ' checked' : ''}>${icon ? `<img src="${icon}" alt="">` : ''}<span>${esc(label)}</span><span class="n">${count}</span></label>`;
+  return `<label class="opt" for="${esc(id)}"><input type="checkbox" id="${esc(id)}" name="${name}" value="${esc(value)}"${checked ? ' checked' : ''}>${mark}<span>${esc(label)}</span><span class="n">${count}</span></label>`;
 }
+const symbol = (src) => `<img src="${src}" alt="">`;
+const swatch = (level) => `<span class="sev-swatch" data-level="${level}" style="background:${SEVERITY_COLORS[level]}"></span>`;
 
 function renderFilters() {
   const s = t();
@@ -324,14 +328,14 @@ function renderFilters() {
 
   const matCount = (m) => count((r) => r.waste.materials.includes(m));
   const materialOpts = MATERIALS.filter((m) => matCount(m) > 0)
-    .map((m) => option('material', m, MATERIAL_LABELS[app.lang][m], st.materials.has(m), matCount(m), iconSrc(m)));
+    .map((m) => option('material', m, MATERIAL_LABELS[app.lang][m], st.materials.has(m), matCount(m), symbol(iconSrc(m))));
   const otherN = count((r) => r.waste.other);
-  if (otherN) materialOpts.push(option('material', 'other', MATERIAL_LABELS[app.lang].other, st.materials.has('other'), otherN, iconSrc('other')));
-  materialOpts.push(option('material', 'unknown', MATERIAL_LABELS[app.lang].unknown, st.materials.has('unknown'), count((r) => r.waste.unknown), iconSrc('unknown')));
+  if (otherN) materialOpts.push(option('material', 'other', MATERIAL_LABELS[app.lang].other, st.materials.has('other'), otherN, symbol(iconSrc('other'))));
+  materialOpts.push(option('material', 'unknown', MATERIAL_LABELS[app.lang].unknown, st.materials.has('unknown'), count((r) => r.waste.unknown), symbol(iconSrc('unknown'))));
 
   const sevHtml = [...SEVERITY_LEVELS].reverse()
     .filter((l) => count((r) => r.severity === l) > 0)
-    .map((l) => option('severity', String(l), s.severityLevels[l], st.severity.has(String(l)), count((r) => r.severity === l), iconSrc('mixed', false, l)))
+    .map((l) => option('severity', String(l), s.severityLevels[l], st.severity.has(String(l)), count((r) => r.severity === l), swatch(l)))
     .join('');
 
   $('#filters-body').innerHTML = `
@@ -576,7 +580,7 @@ function renderLegend() {
     .map(([a, label]) => { const px = markerPx(a); return `<figure><span class="disc" style="width:${px}px;height:${px}px"></span><figcaption>${label} m²</figcaption></figure>`; })
     .join('');
   const sevRows = [...SEVERITY_LEVELS].reverse().map((l) =>
-    `<li><span class="sev-swatch" style="background:${SEVERITY_COLORS[l]}"></span><span>${esc(s.severityLevels[l])}</span></li>`).join('');
+    `<li>${swatch(l)}<span>${esc(s.severityLevels[l])}</span></li>`).join('');
   $('#legend-body').innerHTML = `
     <h3>${esc(s.severity)}</h3>
     <ul>${sevRows}</ul>

@@ -16,6 +16,27 @@ export function emptyState() {
   };
 }
 
+/**
+ * The state without region, municipality and type choices that no record has
+ * (from an old or mistyped link), so they can't silently hide every result.
+ */
+export function dropUnknownChoices(s, records) {
+  const known = (key) => new Set(records.map((r) => r[key]));
+  const keep = (set, codes) => new Set([...set].filter((c) => codes.has(c)));
+  return {
+    ...s,
+    regions: keep(s.regions, known('regionCode')),
+    municipalities: keep(s.municipalities, known('municipalityCode')),
+    types: keep(s.types, known('typeCode')),
+  };
+}
+
+/** How many filter categories are in use, for the badge on the Filters button. */
+export function activeFilterCount(s) {
+  return [s.regions.size, s.municipalities.size, s.types.size, s.materials.size,
+    s.severity.size, isAreaRangeActive(s)].filter(Boolean).length;
+}
+
 export function isAreaRangeActive(s) {
   return s.areaMin != null || s.areaMax != null;
 }
