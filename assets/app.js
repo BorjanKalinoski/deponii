@@ -196,8 +196,9 @@ function renderStatus() {
   } else if (app.dataStatus === 'unavailable') {
     counts.textContent = s.noData;
   } else {
-    counts.innerHTML = esc(s.counts(c.total, c.located, c.unlocated))
-      .replace(/^([\d\s.,]+)/, '<strong>$1</strong>');
+    // Lines break only between the three counts, never inside one.
+    const text = s.counts(c.total, c.located, c.unlocated).split(' · ').map((part) => part.replace(/ /g, '\u00a0')).join(' · ');
+    counts.innerHTML = esc(text).replace(/^([\d\u202f.,]+)/, '<strong>$1</strong>');
   }
   status.hidden = app.dataStatus !== 'unavailable';
   status.textContent = s.unavailable;
