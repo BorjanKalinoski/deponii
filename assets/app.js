@@ -11,7 +11,7 @@ import {
 } from './lib/i18n.js';
 import { searchKey } from './lib/translit.js';
 import { ICON_KINDS, markerSvg, markerPx, imageName, MIN_PX, MAX_PX, UNKNOWN_PX, NEUTRAL } from './lib/icons.js';
-import { SEVERITY_COLORS, SEVERITY_LEVELS } from './lib/severity.js';
+import { SEVERITY_COLORS, SEVERITY_INK, SEVERITY_HALO, SEVERITY_LEVELS } from './lib/severity.js';
 import { THEME_KEY, THEME_COLOR, MAP_THEMES, resolveTheme, basemapPaint } from './lib/theme.js';
 
 const MK_BOUNDS = [[20.45, 40.84], [23.04, 42.38]];
@@ -62,8 +62,8 @@ const iconUrl = new Map();
 function iconSrc(kind, unknownSize = false, level = 0) {
   const key = imageName(kind, unknownSize, level);
   if (!iconUrl.has(key)) {
-    const color = level ? SEVERITY_COLORS[level] : NEUTRAL;
-    iconUrl.set(key, 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markerSvg(kind, { unknownSize, color })));
+    const style = level ? { color: SEVERITY_COLORS[level], ink: SEVERITY_INK[level] } : { color: NEUTRAL };
+    iconUrl.set(key, 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markerSvg(kind, { unknownSize, ...style })));
   }
   return iconUrl.get(key);
 }
@@ -640,7 +640,7 @@ function decodeMarkerImages() {
       for (const kind of ICON_KINDS) {
         for (const unknownSize of [false, true]) {
           const img = new Image(64, 64);
-          img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markerSvg(kind, { unknownSize, px: 64, color: SEVERITY_COLORS[level] }));
+          img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markerSvg(kind, { unknownSize, px: 64, color: SEVERITY_COLORS[level], ink: SEVERITY_INK[level] }));
           jobs.push(img.decode().then(() => [imageName(kind, unknownSize, level), img]));
         }
       }
@@ -675,9 +675,10 @@ async function addSiteLayers(map) {
     clusterProperties: { maxSev: ['max', ['get', 'sev']] } });
   map.addSource('selected', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   const clusterRadius = ['step', ['get', 'point_count'], 15, 10, 18, 30, 22, 80, 26];
-  // A cluster takes the colour of the most severe site inside it.
-  const clusterColor = ['match', ['get', 'maxSev'],
-    1, SEVERITY_COLORS[1], 2, SEVERITY_COLORS[2], 3, SEVERITY_COLORS[3], SEVERITY_COLORS[4]];
+  // A cluster takes the colour of the most severe site inside it, and the
+  // number on it the matching ink (dark on amber and orange, white on red).
+  const byMaxSev = (colours) => ['match', ['get', 'maxSev'], 1, colours[1], 2, colours[2], 3, colours[3], colours[4]];
+  const clusterColor = byMaxSev(SEVERITY_COLORS);
   map.addLayer({
     id: 'cluster-glow', type: 'circle', source: 'sites', filter: ['has', 'point_count'],
     paint: { 'circle-radius': ['+', clusterRadius, 6], 'circle-color': clusterColor, 'circle-opacity': c.clusterGlowOpacity },
@@ -694,7 +695,7 @@ async function addSiteLayers(map) {
   map.addLayer({
     id: 'cluster-count', type: 'symbol', source: 'sites', filter: ['has', 'point_count'],
     layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-font': ['Noto Sans Bold'], 'text-size': 13, 'text-allow-overlap': true },
-    paint: { 'text-color': c.clusterText, 'text-halo-color': 'rgba(40, 6, 6, 0.55)', 'text-halo-width': 1 },
+    paint: { 'text-color': byMaxSev(SEVERITY_INK), 'text-halo-color': byMaxSev(SEVERITY_HALO), 'text-halo-width': 1 },
   });
   map.addLayer({
     id: 'points', type: 'symbol', source: 'sites', filter: ['!', ['has', 'point_count']],

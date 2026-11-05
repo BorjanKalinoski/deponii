@@ -41,8 +41,6 @@
   --disc: #7a8487;
   --disc-ring: #ffffff;
   --disc-rim: rgba(17, 26, 28, 0.55);
-  --unk-fill: #ffffff;
-  --unk-ring: #737a80;
   --cluster: #cc2f1f;
   --cluster-ring: #ffffff;
   --cluster-ink: #ffffff;
@@ -93,8 +91,6 @@
     --disc: #8d979a;
     --disc-ring: #ffffff;
     --disc-rim: rgba(0, 0, 0, 0.6);
-    --unk-fill: #ffffff;
-    --unk-ring: #737a80;
     --cluster: #cc2f1f;
     --cluster-ring: #f3e6e4;
     --cluster-ink: #ffffff;
@@ -134,8 +130,6 @@
   --disc: #8d979a;
   --disc-ring: #ffffff;
   --disc-rim: rgba(0, 0, 0, 0.6);
-  --unk-fill: #ffffff;
-  --unk-ring: #737a80;
   --cluster: #cc2f1f;
   --cluster-ring: #f3e6e4;
   --cluster-ink: #ffffff;
@@ -312,7 +306,7 @@ legend { font-weight: 600; padding: 0; margin-bottom: 8px; font-size: var(--step
 .sizes { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
 .sizes figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .sizes .disc { border-radius: 50%; background: var(--disc); border: 2px solid var(--disc-ring); box-shadow: 0 0 0 1px var(--disc-rim); }
-.sizes .disc-u { background: var(--unk-fill); border: 2px dashed var(--unk-ring); box-shadow: 0 0 0 1px var(--disc-rim); }
+.sizes .disc-u { background: var(--disc); border: 2px dashed var(--disc-ring); box-shadow: 0 0 0 1px var(--disc-rim); }
 .legend p { margin: 8px 0 0; font-size: var(--step--2); color: var(--muted); }
 .sev-swatch { width: 16px; height: 16px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(17, 26, 28, 0.55); flex: none; margin: 0 2px; }
 .legend .legend-note { margin-top: 6px; }

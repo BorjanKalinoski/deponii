@@ -1,4 +1,4 @@
-// Marker symbols. The fill colour shows severity (see severity.js); the white
+// Marker symbols. The fill colour shows severity (see severity.js); the
 // pictogram inside shows the waste material, so the two never depend on
 // colour alone.
 
@@ -36,21 +36,29 @@ const GLYPHS = {
   unknown: '<path d="M9 9a3 3 0 1 1 4 2.8c-.7.3-1 .8-1 1.5V14M12 18h.01"/>',
 };
 
+export const WHITE = '#ffffff';
+
+// 14 equal dashes around the r=13.3 ring (circumference 83.57), so the dash
+// pattern closes without a doubled dash.
+const DASHES = '3.5 2.469';
+
 /**
- * Marker as an SVG string. `unknownSize` draws the neutral "unknown size"
- * variant: a dashed ring on white, so it can't be mistaken for a small site.
+ * Marker as an SVG string: a disc in `color` with a white ring and the
+ * material pictogram drawn in `ink`. `unknownSize` dashes the white ring, so a
+ * site of unknown area keeps its colour but can't be mistaken for a small one.
  * A soft dark rim outside the white ring keeps every marker's edge visible on
- * a pale basemap; on a dark basemap the white ring does that job. The white
- * pictogram sits on a faint dark outline so it stays legible on pale fills too.
+ * a pale basemap; on a dark basemap the white ring does that job. A white
+ * pictogram sits on a faint dark outline so it stays legible on pale fills.
  */
-export function markerSvg(kind, { unknownSize = false, px = 64, color = NEUTRAL } = {}) {
+export function markerSvg(kind, { unknownSize = false, px = 64, color = NEUTRAL, ink = WHITE } = {}) {
   const glyph = GLYPHS[kind] || GLYPHS.unknown;
   const pictogram = (attrs) => `<g transform="translate(5.6 5.6) scale(0.867)" fill="none" stroke-linecap="round" stroke-linejoin="round" ${attrs}>${glyph}</g>`;
-  const rim = `<circle cx="16" cy="16" r="15.8" fill="${RIM}" fill-opacity="${unknownSize ? 0.45 : 0.55}"/>`;
-  const body = unknownSize
-    ? `<circle cx="16" cy="16" r="14.7" fill="#ffffff"/><circle cx="16" cy="16" r="13.2" fill="none" stroke="${color}" stroke-width="2.6" stroke-dasharray="4.2 2.6"/>${pictogram(`stroke="${color}" stroke-width="2.2"`)}`
-    : `<circle cx="16" cy="16" r="13.3" fill="${color}" stroke="#ffffff" stroke-width="2.4"/>${pictogram(`stroke="${RIM}" stroke-opacity="0.35" stroke-width="3.8"`)}${pictogram('stroke="#ffffff" stroke-width="2.2"')}`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 32 32">${rim}${body}</svg>`;
+  const rim = `<circle cx="16" cy="16" r="15.8" fill="${RIM}" fill-opacity="0.55"/>`;
+  const disc = unknownSize
+    ? `<circle cx="16" cy="16" r="14.6" fill="${color}"/><circle cx="16" cy="16" r="13.3" fill="none" stroke="${WHITE}" stroke-width="2.6" stroke-dasharray="${DASHES}"/>`
+    : `<circle cx="16" cy="16" r="13.3" fill="${color}" stroke="${WHITE}" stroke-width="2.4"/>`;
+  const outline = ink.toLowerCase() === WHITE ? pictogram(`stroke="${RIM}" stroke-opacity="0.35" stroke-width="3.8"`) : '';
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" viewBox="0 0 32 32">${rim}${disc}${outline}${pictogram(`stroke="${ink}" stroke-width="2.2"`)}</svg>`;
 }
 
 export const MIN_AREA = 10;

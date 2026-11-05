@@ -7,12 +7,32 @@ export const SEVERITY_LEVELS = [1, 2, 3, 4];
 // Area bands in m², upper bounds exclusive: <100, <1 000, <10 000, ≥10 000.
 export const AREA_BANDS = [100, 1000, 10000];
 
-// Amber → deep red. Readable with a white pictogram on top, in both themes.
+// Amber → deep red, in both themes. No level is green or blue: every recorded
+// site should read as a problem, the bigger and the active ones more so.
 export const SEVERITY_COLORS = {
   1: '#c98a00',
   2: '#e0620d',
   3: '#cc2f1f',
   4: '#8e0f22',
+};
+
+// What is drawn on top of each fill (marker pictograms, cluster numbers):
+// near-black on amber and orange, like a warning sign, and white on the reds.
+// Each pair keeps at least 4.5:1 contrast (white on amber would be under 3:1).
+const DARK_INK = '#1d1300';
+export const SEVERITY_INK = {
+  1: DARK_INK,
+  2: DARK_INK,
+  3: '#ffffff',
+  4: '#ffffff',
+};
+
+// A thin halo behind cluster numbers, the opposite of the ink.
+export const SEVERITY_HALO = {
+  1: 'rgba(255, 255, 255, 0.45)',
+  2: 'rgba(255, 255, 255, 0.4)',
+  3: 'rgba(40, 6, 6, 0.55)',
+  4: 'rgba(40, 6, 6, 0.55)',
 };
 
 export function areaBand(area) {
