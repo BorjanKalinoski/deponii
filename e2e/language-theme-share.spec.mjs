@@ -88,8 +88,11 @@ test.describe('language', () => {
     await expect(legend).toContainText('Не е измерен ризик');
     const swatches = await legend.locator('.sev-swatch').evaluateAll((els) => els.map((e) => getComputedStyle(e).backgroundColor));
     expect(swatches).toEqual(['rgb(142, 15, 34)', 'rgb(204, 47, 31)', 'rgb(224, 98, 13)', 'rgb(201, 138, 0)']);
+    const fits = () => legend.evaluate((el) => el.scrollHeight <= el.clientHeight + 1);
+    expect(await fits(), 'the whole legend shows without scrolling').toBe(true);
     await page.locator('#lang-toggle').click();
     await expect(legend.locator('h3').first()).toHaveText('Severity');
+    expect(await fits(), 'in English too').toBe(true);
     await expect(legend.locator('li:has(.sev-swatch)')).toHaveText(['Very high', 'High', 'Medium', 'Low']);
     await expect(legend).toContainText('Not a measured risk');
     await page.locator('#legend-toggle').click();
