@@ -8,7 +8,8 @@
   "scripts": {
     "test": "node --test",
     "vendor": "node scripts/vendor.mjs",
-    "vendor:check": "node scripts/vendor.mjs --check"
+    "vendor:check": "node scripts/vendor.mjs --check",
+    "security": "node scripts/security-check.mjs"
   },
   "license": "MIT",
   "dependencies": {
