@@ -17,7 +17,10 @@ test('every theme has a basemap and map colours', () => {
   for (const theme of THEMES) {
     const c = MAP_THEMES[theme];
     assert.match(c.style, /^https:\/\/tiles\.openfreemap\.org\/styles\//);
-    for (const key of ['cluster', 'clusterStroke', 'clusterText', 'clusterGlow', 'selected', 'selectedCasing']) assert.ok(c[key], `${theme}.${key}`);
+    for (const key of ['clusterStroke', 'clusterText', 'selected', 'selectedCasing']) assert.ok(c[key], `${theme}.${key}`);
+    assert.ok(c.clusterGlowOpacity > 0 && c.clusterGlowOpacity < 1, `${theme}.clusterGlowOpacity`);
+    // Cluster fills come from the severity scale, never a theme green.
+    assert.equal(c.cluster, undefined, `${theme}.cluster`);
   }
 });
 

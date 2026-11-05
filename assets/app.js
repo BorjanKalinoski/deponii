@@ -10,13 +10,15 @@ import {
   UI, MATERIAL_LABELS, TYPE_LABELS, placeName, regionName, phrase, fmtNumber, fmtDateTime,
 } from './lib/i18n.js';
 import { searchKey } from './lib/translit.js';
-import { ICON_KINDS, markerSvg, markerPx, imageName, MIN_PX, MAX_PX, UNKNOWN_PX } from './lib/icons.js';
+import { ICON_KINDS, markerSvg, markerPx, imageName, MIN_PX, MAX_PX, UNKNOWN_PX, NEUTRAL } from './lib/icons.js';
+import { SEVERITY_COLORS, SEVERITY_LEVELS } from './lib/severity.js';
 import { THEME_KEY, THEME_COLOR, MAP_THEMES, resolveTheme, basemapPaint } from './lib/theme.js';
 
 const MK_BOUNDS = [[20.45, 40.84], [23.04, 42.38]];
 const SKOPJE_REGION = 'skopski';
 const CLUSTER_MAX_ZOOM = 11;
 const SELECT_ZOOM = 13;
+const PIN_ZOOM = 15; // close enough that the site is never inside a cluster
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -45,6 +47,7 @@ const app = {
   mapLoadedOnce: false,
   styleGen: 0, // counts basemap loads, so a superseded one stops adding layers
   popup: null,
+  pulse: null, // the temporary pulsing ring from pinpoint()
   // Open only where the map is wide enough that the legend won't cover the country.
   legendOpen: window.innerWidth - 400 >= 900,
   muniFilter: '',
@@ -52,10 +55,13 @@ const app = {
 };
 const t = () => UI[app.lang];
 const iconUrl = new Map();
-function iconSrc(kind, unknownSize = false) {
-  const key = imageName(kind, unknownSize);
+// `level` is the site's severity (1–4); 0 draws the neutral symbol used where
+// only the waste material matters (filters, the legend's material list).
+function iconSrc(kind, unknownSize = false, level = 0) {
+  const key = imageName(kind, unknownSize, level);
   if (!iconUrl.has(key)) {
-    iconUrl.set(key, 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markerSvg(kind, { unknownSize })));
+    const color = level ? SEVERITY_COLORS[level] : NEUTRAL;
+    iconUrl.set(key, 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markerSvg(kind, { unknownSize, color })));
   }
   return iconUrl.get(key);
 }
@@ -226,7 +232,7 @@ function renderList() {
     const tags = [`<span class="tag">${esc(type)}</span>`, `<span class="tag">${esc(kind)}</span>`];
     if (!r.located) tags.push(`<span class="tag tag-warn">${esc(s.noLocation.split(/[,.]/)[0])}</span>`);
     return `<li class="item"><button type="button" data-id="${r.id}" aria-current="${r.id === app.selectedId}">
-      <img src="${iconSrc(r.waste.icon, r.area == null)}" alt="">
+      <img src="${iconSrc(r.waste.icon, r.area == null, r.severity)}" alt="">
       <span class="item-name">${esc(recordTitle(r))}<span class="item-place">${esc(place)}</span></span>
       <span class="item-nums">${measure(r.area, s.m2)}<br>${measure(r.volume, s.m3)}</span>
       <span class="item-tags">${tags.join('')}</span>
@@ -263,6 +269,7 @@ function renderChips() {
   st.municipalities.forEach((c) => out.push(chip(muniLabel(c), 'municipality', c)));
   st.types.forEach((c) => out.push(chip(TYPE_LABELS[app.lang][c] || c, 'type', c)));
   st.materials.forEach((c) => out.push(chip(MATERIAL_LABELS[app.lang][c] || c, 'material', c)));
+  [...st.severity].sort().reverse().forEach((c) => out.push(chip(s.severityLevels[c], 'severity', c)));
   if (isAreaRangeActive(st)) {
     out.push(chip(s.areaRange(st.areaMin != null ? fmtNumber(st.areaMin, app.lang) : null,
       st.areaMax != null ? fmtNumber(st.areaMax, app.lang) : null), 'area', ''));
@@ -320,7 +327,13 @@ function renderFilters() {
   if (otherN) materialOpts.push(option('material', 'other', MATERIAL_LABELS[app.lang].other, st.materials.has('other'), otherN, iconSrc('other')));
   materialOpts.push(option('material', 'unknown', MATERIAL_LABELS[app.lang].unknown, st.materials.has('unknown'), count((r) => r.waste.unknown), iconSrc('unknown')));
 
+  const sevHtml = [...SEVERITY_LEVELS].reverse()
+    .filter((l) => count((r) => r.severity === l) > 0)
+    .map((l) => option('severity', String(l), s.severityLevels[l], st.severity.has(String(l)), count((r) => r.severity === l), iconSrc('mixed', false, l)))
+    .join('');
+
   $('#filters-body').innerHTML = `
+    <fieldset><legend>${esc(s.severity)}</legend>${sevHtml}<p class="hint">${esc(s.severityNote)}</p></fieldset>
     <fieldset><legend>${esc(s.region)}</legend>
       <button type="button" class="btn btn-outline shortcut" data-action="skopje">${esc(s.skopjeShortcut)}</button>
       ${regionHtml}
@@ -363,7 +376,7 @@ function filterMunicipalityList() {
 function syncFilterInputs() {
   const st = app.state;
   document.querySelectorAll('#filters-body input[type="checkbox"]').forEach((cb) => {
-    const set = { region: st.regions, municipality: st.municipalities, type: st.types, material: st.materials }[cb.name];
+    const set = { region: st.regions, municipality: st.municipalities, type: st.types, material: st.materials, severity: st.severity }[cb.name];
     if (set) cb.checked = set.has(cb.value);
   });
   const min = $('#area-min');
@@ -397,9 +410,7 @@ function select(id, { from = 'list', fly = true } = {}) {
   renderDetails();
   if (app.popup) { app.popup.remove(); app.popup = null; }
   updateSelectedOnMap();
-  if (fly && r.located && app.mapReady) {
-    app.map.flyTo({ center: [r.lon, r.lat], zoom: Math.max(app.map.getZoom(), SELECT_ZOOM), duration: 700, essential: true });
-  }
+  if (fly && r.located) pinpoint(r, { zoom: SELECT_ZOOM });
   if (from === 'map') {
     const btn = document.querySelector(`#list button[data-id="${id}"]`);
     btn?.scrollIntoView({ block: 'nearest' });
@@ -407,6 +418,43 @@ function select(id, { from = 'list', fly = true } = {}) {
   app.lastFocus = from === 'list' ? document.querySelector(`#list button[data-id="${id}"]`) : null;
   $('#details').hidden = false;
   $('#details').focus({ preventScroll: true });
+}
+
+const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// Fly the map to a site and mark it with a pulsing ring for a few seconds,
+// on top of the lasting selection ring. On phones the details sheet covers
+// the lower part of the map, so the site is centred in the part left visible.
+function pinpoint(r, { zoom = PIN_ZOOM } = {}) {
+  const map = app.map;
+  if (!map || !r?.located) return;
+  const sheet = isPhone() && !$('#details').hidden ? $('#details').offsetHeight : 0;
+  map.flyTo({
+    center: [r.lon, r.lat],
+    zoom: Math.max(map.getZoom(), zoom),
+    padding: { top: 0, right: 0, left: 0, bottom: Math.min(sheet, map.getContainer().clientHeight * 0.75) },
+    duration: reducedMotion() ? 0 : 900,
+    essential: true,
+  });
+  if (app.pulse) app.pulse.remove();
+  const el = document.createElement('div');
+  el.className = 'pin-pulse';
+  el.setAttribute('aria-hidden', 'true');
+  el.style.setProperty('--d', `${markerPx(r.area) + 14}px`);
+  el.style.setProperty('--c', SEVERITY_COLORS[r.severity]);
+  el.innerHTML = '<span></span><span></span>';
+  app.pulse = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([r.lon, r.lat]).addTo(map);
+  const pulse = app.pulse;
+  setTimeout(() => { pulse.remove(); if (app.pulse === pulse) app.pulse = null; }, 4500);
+}
+
+function showOnMap(id) {
+  const r = app.byId.get(id);
+  if (!r?.located) return;
+  if (app.selectedId !== id) select(id, { from: 'list', fly: false });
+  setView('map');
+  // Let the map become visible (phones) before measuring and flying.
+  requestAnimationFrame(() => { app.map?.resize(); pinpoint(r); });
 }
 
 function closeDetails() {
@@ -444,10 +492,11 @@ function renderDetails() {
   if (!r.located) notes.push(`<p class="callout callout-warn">${esc(s.noLocation)}</p>`);
   else notes.push(`<p class="callout">${esc(s.coordAsRecorded)}</p>`);
   const maps = r.located
-    ? `<p class="ext"><a href="https://www.google.com/maps/search/?api=1&amp;query=${r.lat},${r.lon}" target="_blank" rel="noopener">${esc(s.googleMaps)} ↗</a></p>`
+    ? `<p class="detail-actions"><button type="button" class="btn btn-primary" data-action="show-on-map" data-id="${r.id}"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg><span>${esc(s.showOnMap)}</span></button></p>
+      <p class="ext"><a href="https://www.google.com/maps/search/?api=1&amp;query=${r.lat},${r.lon}" target="_blank" rel="noopener">${esc(s.googleMaps)} ↗</a></p>`
     : '';
   $('#details-body').innerHTML = `
-    <div class="detail-kind"><img src="${iconSrc(r.waste.icon, r.area == null)}" alt=""><span>${esc(kind)} · ${esc(type || s.unknown)}</span></div>
+    <div class="detail-kind"><img src="${iconSrc(r.waste.icon, r.area == null, r.severity)}" alt=""><span>${esc(kind)} · ${esc(type || s.unknown)}</span></div>
     <dl class="dl">
       ${row(s.regionL, regionName(r.region, app.lang))}
       ${row(s.municipalityL, placeName(r.municipality, app.lang), latin(r.municipality))}
@@ -480,7 +529,12 @@ function renderLegend() {
   const sizes = [[10, '10'], [1000, '1 000'], [100000, '100 000']]
     .map(([a, label]) => { const px = markerPx(a); return `<figure><span class="disc" style="width:${px}px;height:${px}px"></span><figcaption>${label} m²</figcaption></figure>`; })
     .join('');
+  const sevRows = [...SEVERITY_LEVELS].reverse().map((l) =>
+    `<li><span class="sev-swatch" style="background:${SEVERITY_COLORS[l]}"></span><span>${esc(s.severityLevels[l])}</span></li>`).join('');
   $('#legend-body').innerHTML = `
+    <h3>${esc(s.severity)}</h3>
+    <ul>${sevRows}</ul>
+    <p class="legend-note">${esc(s.severityNote)}</p>
     <h3>${esc(s.material)}</h3>
     <ul>${kinds.map((k) => `<li><img src="${iconSrc(k)}" alt=""><span>${esc(MATERIAL_LABELS[app.lang][k])}</span></li>`).join('')}</ul>
     <h3>${esc(s.legendSize)}</h3>
@@ -499,7 +553,7 @@ function featureCollection() {
       return {
         type: 'Feature',
         geometry: { type: 'Point', coordinates: [r.lon, r.lat] },
-        properties: { id: r.id, img: imageName(r.waste.icon, r.area == null), scale: px / 32, px, sortKey: -px },
+        properties: { id: r.id, img: imageName(r.waste.icon, r.area == null, r.severity), sev: r.severity, scale: px / 32, px, sortKey: -(r.severity * 1000 + px) },
       };
     }),
   };
@@ -536,11 +590,13 @@ let markerImages = null;
 function decodeMarkerImages() {
   if (!markerImages) {
     const jobs = [];
-    for (const kind of ICON_KINDS) {
-      for (const unknownSize of [false, true]) {
-        const img = new Image(64, 64);
-        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markerSvg(kind, { unknownSize, px: 64 }));
-        jobs.push(img.decode().then(() => [imageName(kind, unknownSize), img]));
+    for (const level of SEVERITY_LEVELS) {
+      for (const kind of ICON_KINDS) {
+        for (const unknownSize of [false, true]) {
+          const img = new Image(64, 64);
+          img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markerSvg(kind, { unknownSize, px: 64, color: SEVERITY_COLORS[level] }));
+          jobs.push(img.decode().then(() => [imageName(kind, unknownSize, level), img]));
+        }
       }
     }
     markerImages = Promise.all(jobs);
@@ -569,17 +625,21 @@ async function addSiteLayers(map) {
   const images = await decodeMarkerImages();
   if (gen !== app.styleGen || map.getSource('sites')) return; // a newer basemap took over
   for (const [name, img] of images) if (!map.hasImage(name)) map.addImage(name, img, { pixelRatio: 2 });
-  map.addSource('sites', { type: 'geojson', data: featureCollection(), cluster: true, clusterMaxZoom: CLUSTER_MAX_ZOOM, clusterRadius: 44 });
+  map.addSource('sites', { type: 'geojson', data: featureCollection(), cluster: true, clusterMaxZoom: CLUSTER_MAX_ZOOM, clusterRadius: 44,
+    clusterProperties: { maxSev: ['max', ['get', 'sev']] } });
   map.addSource('selected', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   const clusterRadius = ['step', ['get', 'point_count'], 15, 10, 18, 30, 22, 80, 26];
+  // A cluster takes the colour of the most severe site inside it.
+  const clusterColor = ['match', ['get', 'maxSev'],
+    1, SEVERITY_COLORS[1], 2, SEVERITY_COLORS[2], 3, SEVERITY_COLORS[3], SEVERITY_COLORS[4]];
   map.addLayer({
     id: 'cluster-glow', type: 'circle', source: 'sites', filter: ['has', 'point_count'],
-    paint: { 'circle-radius': ['+', clusterRadius, 5], 'circle-color': c.clusterGlow },
+    paint: { 'circle-radius': ['+', clusterRadius, 6], 'circle-color': clusterColor, 'circle-opacity': c.clusterGlowOpacity },
   });
   map.addLayer({
     id: 'clusters', type: 'circle', source: 'sites', filter: ['has', 'point_count'],
     paint: {
-      'circle-color': c.cluster,
+      'circle-color': clusterColor,
       'circle-stroke-color': c.clusterStroke,
       'circle-stroke-width': 2.5,
       'circle-radius': clusterRadius,
@@ -588,7 +648,7 @@ async function addSiteLayers(map) {
   map.addLayer({
     id: 'cluster-count', type: 'symbol', source: 'sites', filter: ['has', 'point_count'],
     layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-font': ['Noto Sans Bold'], 'text-size': 13, 'text-allow-overlap': true },
-    paint: { 'text-color': c.clusterText },
+    paint: { 'text-color': c.clusterText, 'text-halo-color': 'rgba(40, 6, 6, 0.55)', 'text-halo-width': 1 },
   });
   map.addLayer({
     id: 'points', type: 'symbol', source: 'sites', filter: ['!', ['has', 'point_count']],
@@ -673,7 +733,7 @@ function openChooser(ids, lngLat) {
   const el = document.createElement('div');
   el.className = 'chooser';
   el.innerHTML = `<p>${esc(t().here(recs.length))}</p>` + recs.map((r) =>
-    `<button type="button" data-id="${r.id}"><img src="${iconSrc(r.waste.icon, r.area == null)}" alt=""><span>${esc(recordTitle(r))}${r.area != null ? ` · ${esc(fmtNumber(r.area, app.lang))} m²` : ''}</span></button>`).join('');
+    `<button type="button" data-id="${r.id}"><img src="${iconSrc(r.waste.icon, r.area == null, r.severity)}" alt=""><span>${esc(recordTitle(r))}${r.area != null ? ` · ${esc(fmtNumber(r.area, app.lang))} m²` : ''}</span></button>`).join('');
   el.addEventListener('click', (ev) => {
     const b = ev.target.closest('button[data-id]');
     if (b) select(Number(b.dataset.id), { from: 'map', fly: false });
@@ -704,6 +764,7 @@ function bindEvents() {
     if (action === 'reset') { resetAll(); return; }
     if (action === 'close-filters') { closeFilters(); return; }
     if (action === 'close-details') { closeDetails(); return; }
+    if (action === 'show-on-map') { showOnMap(Number(e.target.closest('[data-id]').dataset.id)); return; }
     if (action === 'skopje') {
       app.state.regions = new Set([SKOPJE_REGION]);
       update({ fit: 'results' });
@@ -718,6 +779,7 @@ function bindEvents() {
         municipality: () => st.municipalities.delete(v),
         type: () => st.types.delete(v),
         material: () => st.materials.delete(v),
+        severity: () => st.severity.delete(v),
         area: () => { st.areaMin = null; st.areaMax = null; },
         bounds: () => { st.bounds = null; },
       })[chipEl.dataset.chip]?.();
@@ -732,7 +794,7 @@ function bindEvents() {
     const cb = e.target;
     if (cb.type !== 'checkbox') return;
     const st = app.state;
-    const set = { region: st.regions, municipality: st.municipalities, type: st.types, material: st.materials }[cb.name];
+    const set = { region: st.regions, municipality: st.municipalities, type: st.types, material: st.materials, severity: st.severity }[cb.name];
     if (!set) return;
     toggleInSet(set, cb.value, cb.checked);
     const focusMap = (cb.name === 'municipality' || cb.name === 'region') && cb.checked;
@@ -806,6 +868,9 @@ function toast(msg) {
 }
 
 /* ---------- Start ---------- */
+
+// Read-only handle for the end-to-end tests (e2e/fixtures.mjs).
+window.__deponii = app;
 
 applyTheme(app.theme);
 renderStaticText();
