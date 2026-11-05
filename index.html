@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="mk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Депонии во Македонија</title>
+  <meta name="description" content="Евидентирани диви депонии во Македонија: мапа, листа, пребарување и филтри. Recorded wild landfills in Macedonia.">
+  <meta name="theme-color" content="#f5f6f3">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/vendor/maplibre-gl.css">
+  <link rel="stylesheet" href="assets/styles.css">
+  <script src="assets/vendor/maplibre-gl.js" defer></script>
+  <script type="module" src="assets/app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#list" data-t="skipToList">Прескокни до листата</a>
+
+  <header class="topbar">
+    <div class="brand">
+      <h1 id="title">Депонии во Македонија</h1>
+      <p id="tagline" class="tagline"></p>
+    </div>
+    <div class="top-actions">
+      <button type="button" id="copy-link" class="btn btn-quiet">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>
+        <span id="copy-link-label"></span>
+      </button>
+      <button type="button" id="lang-toggle" class="btn btn-quiet"></button>
+    </div>
+  </header>
+
+  <main class="layout" data-view="map">
+    <aside class="sidebar" id="sidebar" aria-labelledby="title">
+      <div class="search-row">
+        <label for="q" class="sr-only" id="q-label"></label>
+        <div class="search-box">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
+          <input id="q" type="search" autocomplete="off" spellcheck="false">
+        </div>
+        <button type="button" id="filters-toggle" class="btn btn-outline" aria-expanded="false" aria-controls="filters">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+          <span id="filters-label"></span>
+          <span id="filters-badge" class="badge" hidden></span>
+        </button>
+      </div>
+
+      <div id="chips" class="chips" aria-live="polite"></div>
+
+      <div class="results-head">
+        <p id="counts" class="counts" aria-live="polite"></p>
+        <div class="sort">
+          <label for="sort" id="sort-label"></label>
+          <select id="sort">
+            <option value="area"></option>
+            <option value="volume"></option>
+          </select>
+        </div>
+      </div>
+
+      <div id="status" class="status" hidden></div>
+      <ol id="list" class="list" tabindex="-1"></ol>
+      <div id="empty" class="empty" hidden>
+        <p id="empty-text"></p>
+        <button type="button" class="btn btn-primary" data-action="reset"></button>
+      </div>
+
+      <footer class="data-note">
+        <p id="last-update"></p>
+        <p id="date-note"></p>
+      </footer>
+
+      <section id="filters" class="panel filters" hidden aria-labelledby="filters-title">
+        <div class="panel-head">
+          <h2 id="filters-title"></h2>
+          <button type="button" class="btn btn-quiet" data-action="reset"></button>
+          <button type="button" class="icon-btn" data-action="close-filters">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            <span class="sr-only" data-t="close"></span>
+          </button>
+        </div>
+        <div class="panel-body" id="filters-body"></div>
+        <div class="panel-foot">
+          <button type="button" class="btn btn-primary" data-action="close-filters" id="filters-done"></button>
+        </div>
+      </section>
+
+      <section id="details" class="panel details" hidden aria-labelledby="details-title" tabindex="-1">
+        <div class="panel-head">
+          <h2 id="details-title"></h2>
+          <button type="button" class="icon-btn" data-action="close-details">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            <span class="sr-only" data-t="close"></span>
+          </button>
+        </div>
+        <div class="panel-body" id="details-body"></div>
+      </section>
+    </aside>
+
+    <section class="map-wrap" aria-label="Мапа" id="map-wrap">
+      <div id="map"></div>
+      <button type="button" id="search-area" class="btn btn-primary map-float" hidden></button>
+      <div id="map-error" class="map-error" hidden></div>
+      <div class="legend" id="legend">
+        <button type="button" id="legend-toggle" class="btn btn-quiet" aria-expanded="true" aria-controls="legend-body"></button>
+        <div id="legend-body"></div>
+      </div>
+    </section>
+
+    <nav class="view-switch" aria-label="Map or list">
+      <button type="button" data-view="map" aria-pressed="true">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M9 5L3 7v12l6-2 6 2 6-2V5l-6 2zM9 5v12M15 7v12"/></svg>
+        <span data-t="map"></span>
+      </button>
+      <button type="button" data-view="list" aria-pressed="false">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>
+        <span data-t="list"></span>
+      </button>
+    </nav>
+  </main>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>
