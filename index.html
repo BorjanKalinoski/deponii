@@ -68,7 +68,13 @@
       </div>
 
       <div id="status" class="status" hidden></div>
-      <ol id="list" class="list" tabindex="-1"></ol>
+      <div class="results">
+        <section id="summary" class="summary" aria-labelledby="summary-title" hidden>
+          <h2 id="summary-title" class="summary-title"></h2>
+          <dl id="summary-body" class="summary-body"></dl>
+        </section>
+        <ol id="list" class="list" tabindex="-1"></ol>
+      </div>
       <div id="empty" class="empty" hidden>
         <p id="empty-text"></p>
         <button type="button" class="btn btn-primary" data-action="reset"></button>

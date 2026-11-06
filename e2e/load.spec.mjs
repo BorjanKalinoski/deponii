@@ -92,6 +92,7 @@ test.describe('when the data is not usable', () => {
     await expect(page.locator('#counts')).toHaveText('Нема податоци');
     await expect(results(page)).toHaveCount(0);
     await expect(page.locator('#empty')).toBeHidden();
+    await expect(page.locator('#summary')).toBeHidden();
   });
 
   test('a sign-in page in place of the CSV is rejected, not shown as data', async ({ page }, info) => {

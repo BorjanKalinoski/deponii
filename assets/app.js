@@ -7,6 +7,7 @@ import {
   dropUnknownChoices, activeFilterCount, boundsForView,
 } from './lib/filters.js';
 import { toQuery, fromQuery } from './lib/urlstate.js';
+import { summarize } from './lib/summary.js';
 import {
   UI, MATERIAL_LABELS, TYPE_LABELS, placeName, regionName, phrase, fmtNumber, fmtDateTime,
 } from './lib/i18n.js';
@@ -106,6 +107,7 @@ function update({ fit = null } = {}) {
   if (app.selectedId != null && !app.onMap.some((r) => r.id === app.selectedId)) closeDetails();
   renderChips();
   renderList();
+  renderSummary();
   renderStatus();
   syncFilterInputs();
   updateMap();
@@ -252,6 +254,34 @@ function renderList() {
     </button></li>`;
   }).join('');
   $('#list').innerHTML = html;
+}
+
+/* ---------- Summary ---------- */
+
+// Totals for the sites in the list (filters and the map-area limit included),
+// from stated values only, with how many sites state them. A single site needs
+// no summary: its own numbers are right below.
+function renderSummary() {
+  const s = t();
+  const box = $('#summary');
+  const sum = summarize(app.filtered);
+  box.hidden = app.dataStatus !== 'ready' || sum.count < 2;
+  if (box.hidden) return;
+  $('#summary-title').textContent = s.summary;
+  const tile = (label, m, unit, known, half) => {
+    const value = m.total == null ? `<span class="unk">${esc(s.unknown)}</span>` : `${esc(fmtNumber(m.total, app.lang))} ${unit}`;
+    let share = '';
+    if (m.overHalf != null) {
+      // Named as in the list; each name keeps its comma or full stop on its line.
+      const names = m.leaders.map((r, i) =>
+        `<span class="sum-name"><button type="button" class="linkish" data-action="select-site" data-id="${r.id}">${esc(recordTitle(r))}</button>${i === m.leaders.length - 1 ? '.' : ','}</span>`).join(' ');
+      share = `<p class="sum-share">${esc(half(m.overHalf, m.known, sum.count))}${names ? `: ${names}` : '.'}</p>`;
+    }
+    return `<div class="sum-tile"><dt>${esc(label)}</dt><dd><span class="sum-value">${value}</span><span class="sum-known">${esc(known(m.known, sum.count))}</span>${share}</dd></div>`;
+  };
+  $('#summary-body').innerHTML =
+    tile(s.totalArea, sum.area, s.m2, s.areaKnown, s.areaHalf) +
+    tile(s.totalVolume, sum.volume, s.m3, s.volumeKnown, s.volumeHalf);
 }
 
 function markListSelection() {
@@ -520,8 +550,10 @@ function closeDetails() {
   clearPulse();
   markListSelection();
   updateSelectedOnMap();
-  const back = app.lastFocus || document.querySelector(`#list button[data-id="${id}"]`);
-  if (back && back.isConnected && !isPhone()) back.focus({ preventScroll: true });
+  // The button that opened the details may have been redrawn since: find it again.
+  const back = [app.lastFocus, document.querySelector(`#summary [data-action="select-site"][data-id="${id}"]`),
+    document.querySelector(`#list button[data-id="${id}"]`)].find((b) => b?.isConnected);
+  if (back && !isPhone()) back.focus({ preventScroll: true });
 }
 
 function row(label, value, extra = '') {
@@ -845,6 +877,12 @@ function bindEvents() {
     if (action === 'close-details') { closeDetails(); return; }
     if (action === 'expand-details') { setDetailsPeek(false); $('#details').focus({ preventScroll: true }); return; }
     if (action === 'show-on-map') { showOnMap(Number(e.target.closest('[data-id]').dataset.id)); return; }
+    if (action === 'select-site') {
+      const btn = e.target.closest('[data-id]');
+      select(Number(btn.dataset.id), { from: 'list' });
+      app.lastFocus = btn; // closing the details returns here, not to the list
+      return;
+    }
     if (action === 'skopje') {
       app.state.regions = new Set([SKOPJE_REGION]);
       app.state.bounds = null; // the map moves to the region, so the list stops following the old area

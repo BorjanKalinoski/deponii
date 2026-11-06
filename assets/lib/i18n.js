@@ -83,6 +83,18 @@ export const UI = {
     areaRange: (a, b) => `Површина ${a ?? '…'}–${b ?? '…'} m²`,
     noData: 'Нема податоци',
     mapFailed: 'Мапата не можеше да се вчита. Листата и пребарувањето работат.',
+    summary: 'Преглед',
+    totalArea: 'Збир на познатата површина',
+    totalVolume: 'Збир на познатиот волумен',
+    areaKnown: (k, n) => (k === n ? `позната за сите ${fmtInt(n, 'mk')}` : `позната за ${fmtInt(k, 'mk')} од ${fmtInt(n, 'mk')} ${n === 1 ? 'локација' : 'локации'}`),
+    volumeKnown: (k, n) => (k === n ? `познат за сите ${fmtInt(n, 'mk')}` : `познат за ${fmtInt(k, 'mk')} од ${fmtInt(n, 'mk')} ${n === 1 ? 'локација' : 'локации'}`),
+    // With some values unknown, the claim is only about the known ones, and says so.
+    areaHalf: (n, k, total) => (k === total
+      ? (n === 1 ? 'Најголемата локација има повеќе од половина од површината' : `${fmtInt(n, 'mk')}-те најголеми локации имаат повеќе од половина од површината`)
+      : (n === 1 ? 'Од локациите со позната површина, најголемата има повеќе од половина од збирот' : `${fmtInt(n, 'mk')}-те најголеми локации со позната површина имаат повеќе од половина од збирот`)),
+    volumeHalf: (n, k, total) => (k === total
+      ? (n === 1 ? 'Најголемата локација има повеќе од половина од волуменот' : `${fmtInt(n, 'mk')}-те најголеми локации имаат повеќе од половина од волуменот`)
+      : (n === 1 ? 'Од локациите со познат волумен, најголемата има повеќе од половина од збирот' : `${fmtInt(n, 'mk')}-те најголеми локации со познат волумен имаат повеќе од половина од збирот`)),
   },
   en: {
     title: 'Wild landfills in Macedonia',
@@ -163,6 +175,17 @@ export const UI = {
     areaRange: (a, b) => `Area ${a ?? '…'}–${b ?? '…'} m²`,
     noData: 'No data',
     mapFailed: 'The map could not load. The list and search still work.',
+    summary: 'Summary',
+    totalArea: 'Sum of known areas',
+    totalVolume: 'Sum of known volumes',
+    areaKnown: (k, n) => (k === n ? `known for all ${fmtInt(n, 'en')}` : `known for ${fmtInt(k, 'en')} of ${fmtInt(n, 'en')} ${n === 1 ? 'site' : 'sites'}`),
+    volumeKnown: (k, n) => (k === n ? `known for all ${fmtInt(n, 'en')}` : `known for ${fmtInt(k, 'en')} of ${fmtInt(n, 'en')} ${n === 1 ? 'site' : 'sites'}`),
+    areaHalf: (n, k, total) => (k === total
+      ? (n === 1 ? 'The largest site has more than half the area' : `The ${fmtInt(n, 'en')} largest sites have more than half the area`)
+      : (n === 1 ? 'Of the sites with a known area, the largest has more than half the sum' : `The ${fmtInt(n, 'en')} largest sites with a known area have more than half the sum`)),
+    volumeHalf: (n, k, total) => (k === total
+      ? (n === 1 ? 'The largest site has more than half the volume' : `The ${fmtInt(n, 'en')} largest sites have more than half the volume`)
+      : (n === 1 ? 'Of the sites with a known volume, the largest has more than half the sum' : `The ${fmtInt(n, 'en')} largest sites with a known volume have more than half the sum`)),
   },
 };
 

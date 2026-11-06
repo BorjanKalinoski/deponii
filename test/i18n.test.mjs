@@ -15,6 +15,10 @@ const ARGS = {
   here: [[2]],
   showResults: [[1], [10]],
   areaRange: [[10, 100], [null, 100], [10, null]],
+  areaKnown: [[6, 10], [10, 10], [0, 5]],
+  volumeKnown: [[6, 10], [10, 10], [0, 5]],
+  areaHalf: [[1, 10, 10], [12, 431, 431], [1, 6, 10], [12, 398, 431]],
+  volumeHalf: [[1, 10, 10], [3, 431, 431], [1, 6, 10], [3, 395, 431]],
 };
 
 test('every Macedonian text has an English one of the same kind, and nothing extra', () => {
@@ -77,6 +81,25 @@ test('counts read naturally in the singular and plural', () => {
   assert.equal(UI.en.counts(1200, 1100, 100), '1 200 recorded sites · 1 100 on the map · 100 without location');
   assert.equal(UI.mk.showResults(1), 'Прикажи 1 локација');
   assert.equal(UI.en.showResults(3), 'Show 3 sites');
+});
+
+test('the summary says how many sites state each total, and how few of the largest hold more than half', () => {
+  assert.equal(UI.mk.areaKnown(398, 431), 'позната за 398 од 431 локации');
+  assert.equal(UI.mk.volumeKnown(395, 431), 'познат за 395 од 431 локации');
+  assert.equal(UI.mk.areaKnown(10, 10), 'позната за сите 10');
+  assert.equal(UI.en.areaKnown(398, 431), 'known for 398 of 431 sites');
+  assert.equal(UI.en.volumeKnown(1200, 1200), 'known for all 1 200');
+  // Every site states the value: the claim is about the whole list.
+  assert.equal(UI.mk.areaHalf(1, 10, 10), 'Најголемата локација има повеќе од половина од површината');
+  assert.equal(UI.mk.areaHalf(12, 431, 431), '12-те најголеми локации имаат повеќе од половина од површината');
+  assert.equal(UI.mk.volumeHalf(3, 431, 431), '3-те најголеми локации имаат повеќе од половина од волуменот');
+  assert.equal(UI.en.areaHalf(12, 431, 431), 'The 12 largest sites have more than half the area');
+  assert.equal(UI.en.volumeHalf(1, 10, 10), 'The largest site has more than half the volume');
+  // Some values unknown: the claim says it covers only the known ones.
+  assert.equal(UI.mk.areaHalf(12, 398, 431), '12-те најголеми локации со позната површина имаат повеќе од половина од збирот');
+  assert.equal(UI.mk.volumeHalf(1, 6, 10), 'Од локациите со познат волумен, најголемата има повеќе од половина од збирот');
+  assert.equal(UI.en.areaHalf(1, 6, 10), 'Of the sites with a known area, the largest has more than half the sum');
+  assert.equal(UI.en.volumeHalf(3, 395, 431), 'The 3 largest sites with a known volume have more than half the sum');
 });
 
 test('English shows Latin place names and verified translations', () => {

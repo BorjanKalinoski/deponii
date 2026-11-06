@@ -232,8 +232,25 @@ svg { width: 1.15em; height: 1.15em; fill: none; stroke: currentColor; stroke-wi
 
 .status { margin: 16px; padding: 12px 14px; border-radius: var(--radius); background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-ink); font-size: var(--step--1); }
 
+/* Results: the summary, then the list; both scroll together, so the summary
+   moves out of the way as the visitor scrolls down the list. */
+.results { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.summary { padding: 12px 16px 14px; border-bottom: 1px solid var(--line); }
+.summary-title { margin: 0 0 8px; font-size: var(--step--2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-2); }
+.summary-body { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.sum-tile { min-width: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--surface-2); }
+.sum-tile dt { font-size: var(--step--2); color: var(--ink-2); }
+.sum-tile dd { margin: 0; }
+.sum-value { display: block; font-size: var(--step-1); font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.sum-value .unk { color: var(--muted); font-weight: 400; font-style: italic; }
+.sum-known { display: block; font-size: var(--step--2); color: var(--muted); font-variant-numeric: tabular-nums; }
+.sum-share { margin: 6px 0 0; font-size: var(--step--2); color: var(--ink-2); overflow-wrap: anywhere; }
+.sum-name { white-space: nowrap; }
+.linkish { padding: 0; border: 0; background: none; color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.linkish:hover { text-decoration-thickness: 2px; }
+
 /* List */
-.list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-height: 0; outline: none; }
+.list { list-style: none; margin: 0; padding: 0; outline: none; flex: 1 0 auto; } /* fills the area even when empty */
 .item { border-bottom: 1px solid var(--line); }
 .item button {
   width: 100%; display: grid; grid-template-columns: 28px 1fr auto; gap: 4px 12px; align-items: start;
@@ -371,7 +388,7 @@ legend { font-weight: 600; padding: 0; margin-bottom: 8px; font-size: var(--step
   .layout[data-view="list"] .map-wrap,
   .layout[data-view="list"] .map-wrap * { visibility: hidden !important; }
   .layout[data-view="map"] .sidebar .panel:not([hidden]) { visibility: visible; }
-  .search-row, .chips, .results-head, .data-note { padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)); }
+  .search-row, .chips, .results-head, .summary, .data-note { padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)); }
   .item button { padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px)); }
   .panel { position: fixed; inset: var(--topbar) 0 0 0; inset-block-start: calc(var(--topbar) + env(safe-area-inset-top, 0px)); z-index: 30; }
   .details { inset-block-start: auto; max-height: 72%; border-radius: 14px 14px 0 0; box-shadow: 0 -6px 24px rgba(20, 30, 30, 0.2); bottom: 0; padding-bottom: env(safe-area-inset-bottom, 0px); }
@@ -385,6 +402,9 @@ legend { font-weight: 600; padding: 0; margin-bottom: 8px; font-size: var(--step
   .view-switch button { display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: var(--radius); background: none; font-weight: 600; cursor: pointer; min-height: 44px; }
   .view-switch button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
   .legend { bottom: 12px; }
+  /* Room between the site names in the summary, for fingers. */
+  .sum-share { line-height: 1.9; }
+  .linkish { padding-block: 4px; margin-block: -4px; }
   .legend:not(.open) #legend-body { display: none; }
   /* Bigger zoom buttons for fingers. */
   .maplibregl-ctrl-group button { width: 40px; height: 40px; }
