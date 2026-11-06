@@ -5,7 +5,7 @@ import { validateFeed } from '../assets/lib/feed.js';
 import { buildRecords } from '../assets/lib/records.js';
 import {
   applyFilters, sortRecords, emptyState, hasActiveFilters, isAreaRangeActive, queryTokens,
-  dropUnknownChoices, activeFilterCount,
+  dropUnknownChoices, activeFilterCount, boundsForView,
 } from '../assets/lib/filters.js';
 
 const sample = readFileSync(new URL('./fixtures/sample.csv', import.meta.url), 'utf8');
@@ -80,6 +80,16 @@ test('a map-area limit keeps only located records inside the bounds, edges inclu
   assert.deepEqual(find({ bounds: [21.805417, 41.740972, 21.9, 41.8] }), [2], 'a site on the edge is inside');
   assert.deepEqual(find({ bounds: [-180, -90, 180, 90] }), [0, 1, 2, 3, 4, 6, 7, 8, 9], 'never the unlocated one');
   assert.deepEqual(find({ bounds: [0, 0, 1, 1] }), []);
+});
+
+test('the list follows the map only when the view leaves some site out', () => {
+  const skopje = [21.3, 41.9, 21.6, 42.1];
+  assert.deepEqual(boundsForView(records, skopje), skopje, 'a view that hides sites becomes the limit');
+  assert.equal(boundsForView(records, [-180, -90, 180, 90]), null, 'a view with every site in it adds no limit');
+  const onlySkopje = applyFilters(records, state({ regions: set('skopski') }));
+  assert.equal(boundsForView(onlySkopje, skopje), null, 'judged on the filtered sites: none of them is outside');
+  assert.equal(boundsForView(records.filter((r) => !r.located), [0, 0, 1, 1]), null, 'sites without coordinates never count');
+  assert.notEqual(boundsForView(records, skopje), skopje, 'a copy, so later changes to the view never leak in');
 });
 
 test('search matches settlement, locality and municipality, in either script', () => {

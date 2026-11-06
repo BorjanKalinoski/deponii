@@ -4,7 +4,7 @@ import { buildRecords, TYPE_ORDER } from './lib/records.js';
 import { MATERIALS } from './lib/materials.js';
 import {
   applyFilters, sortRecords, countRecords, hasActiveFilters, isAreaRangeActive, emptyState,
-  dropUnknownChoices, activeFilterCount,
+  dropUnknownChoices, activeFilterCount, boundsForView,
 } from './lib/filters.js';
 import { toQuery, fromQuery } from './lib/urlstate.js';
 import {
@@ -16,6 +16,7 @@ import { SEVERITY_COLORS, SEVERITY_INK, SEVERITY_HALO, SEVERITY_LEVELS } from '.
 import { THEME_KEY, THEME_COLOR, MAP_THEMES, resolveTheme, basemapPaint } from './lib/theme.js';
 
 const MK_BOUNDS = [[20.45, 40.84], [23.04, 42.38]];
+const FOLLOW_DELAY = 1000; // ms after the map stops before the list follows it
 const SKOPJE_REGION = 'skopski';
 const CLUSTER_MAX_ZOOM = 11;
 const SELECT_ZOOM = 13;
@@ -42,6 +43,7 @@ const app = {
   records: [],
   byId: new Map(),
   filtered: [],
+  onMap: [], // the filtered records before the map-area limit: what the map draws
   meta: null,
   dataStatus: 'loading', // loading | ready | unavailable
   selectedId: null,
@@ -51,6 +53,7 @@ const app = {
   styleGen: 0, // counts basemap loads, so a superseded one stops adding layers
   popup: null,
   pulse: null, // the temporary pulsing ring from pinpoint()
+  followTimer: null, // pending list-follows-map update after the visitor moves the map
   // Open only where the map is wide enough that the legend won't cover the country.
   legendOpen: window.innerWidth - 400 >= 900,
   muniFilter: '',
@@ -97,8 +100,10 @@ async function loadData() {
 /* ---------- State changes ---------- */
 
 function update({ fit = null } = {}) {
+  app.onMap = applyFilters(app.records, { ...app.state, bounds: null });
   app.filtered = sortRecords(applyFilters(app.records, app.state), app.state.sort);
-  if (app.selectedId != null && !app.filtered.some((r) => r.id === app.selectedId)) closeDetails();
+  // Panning away from the open site doesn't close it; changing the filters does.
+  if (app.selectedId != null && !app.onMap.some((r) => r.id === app.selectedId)) closeDetails();
   renderChips();
   renderList();
   renderStatus();
@@ -157,7 +162,6 @@ function renderStaticText() {
   $('#empty-text').textContent = s.empty;
   document.querySelectorAll('[data-action="reset"]').forEach((b) => { b.textContent = s.reset; });
   document.querySelectorAll('[data-t]').forEach((el) => { el.textContent = s[el.dataset.t]; });
-  $('#search-area').textContent = s.searchArea;
   $('#map-wrap').setAttribute('aria-label', s.mapLabel);
   $('.view-switch').setAttribute('aria-label', s.viewSwitch);
   $('#date-note').textContent = s.dateNote;
@@ -604,7 +608,7 @@ function renderLegend() {
 function featureCollection() {
   return {
     type: 'FeatureCollection',
-    features: app.filtered.filter((r) => r.located).map((r) => {
+    features: app.onMap.filter((r) => r.located).map((r) => {
       const px = markerPx(r.area);
       return {
         type: 'Feature',
@@ -632,7 +636,12 @@ function updateSelectedOnMap() {
 
 function fitToResults() {
   if (!app.mapReady) return;
-  const pts = app.filtered.filter((r) => r.located);
+  if (app.state.bounds) { // a shared link with a map area: show that area
+    const [w, so, e, n] = app.state.bounds;
+    app.map.fitBounds([[w, so], [e, n]], { padding: 0, duration: 0 });
+    return;
+  }
+  const pts = app.onMap.filter((r) => r.located);
   if (!pts.length) return;
   let w = 180, so = 90, e = -180, n = -90;
   for (const r of pts) { w = Math.min(w, r.lon); e = Math.max(e, r.lon); so = Math.min(so, r.lat); n = Math.max(n, r.lat); }
@@ -778,10 +787,22 @@ function initMap() {
     map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
   }
+  // The list follows the map: a second after the visitor stops panning or
+  // zooming, it narrows to the visible area. Moves the app makes itself
+  // (flying to a site, fitting to results) leave the list as it is.
+  map.on('movestart', () => clearTimeout(app.followTimer));
   map.on('moveend', (e) => {
     writeUrl();
-    if (e.originalEvent) $('#search-area').hidden = false;
+    if (e.originalEvent) app.followTimer = setTimeout(followView, FOLLOW_DELAY);
   });
+}
+
+function followView() {
+  const b = app.map.getBounds();
+  const next = boundsForView(app.onMap, [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
+  if (JSON.stringify(next) === JSON.stringify(app.state.bounds)) return;
+  app.state.bounds = next;
+  update();
 }
 
 function openChooser(ids, lngLat) {
@@ -811,7 +832,8 @@ function bindEvents() {
   let qTimer;
   $('#q').addEventListener('input', (e) => {
     clearTimeout(qTimer);
-    qTimer = setTimeout(() => { app.state.q = e.target.value; update(); }, 150);
+    // A search looks everywhere, not just in the area the map shows.
+    qTimer = setTimeout(() => { app.state.q = e.target.value; app.state.bounds = null; update(); }, 150);
   });
   $('#sort').addEventListener('change', (e) => { app.state.sort = e.target.value; update(); });
   $('#filters-toggle').addEventListener('click', () => ($('#filters').hidden ? openFilters() : closeFilters()));
@@ -825,6 +847,7 @@ function bindEvents() {
     if (action === 'show-on-map') { showOnMap(Number(e.target.closest('[data-id]').dataset.id)); return; }
     if (action === 'skopje') {
       app.state.regions = new Set([SKOPJE_REGION]);
+      app.state.bounds = null; // the map moves to the region, so the list stops following the old area
       update({ fit: 'results' });
       return;
     }
@@ -856,6 +879,7 @@ function bindEvents() {
     if (!set) return;
     toggleInSet(set, cb.value, cb.checked);
     const focusMap = (cb.name === 'municipality' || cb.name === 'region') && cb.checked;
+    if (focusMap) st.bounds = null; // the map moves to the place, so the list stops following the old area
     update({ fit: focusMap ? 'results' : null });
   });
   let areaTimer;
@@ -869,13 +893,6 @@ function bindEvents() {
       app.state.areaMax = val('#area-max');
       update();
     }, 250);
-  });
-
-  $('#search-area').addEventListener('click', () => {
-    const b = app.map.getBounds();
-    app.state.bounds = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
-    $('#search-area').hidden = true;
-    update();
   });
 
   $('#lang-toggle').addEventListener('click', () => {

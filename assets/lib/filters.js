@@ -1,4 +1,5 @@
-// One filtered record set drives the map, the list and the counts.
+// One filtered record set drives the list and the counts; the map draws the
+// same set before the map-area limit, so panning never empties it.
 import { searchKey } from './translit.js';
 
 export function emptyState() {
@@ -11,7 +12,7 @@ export function emptyState() {
     severity: new Set(), // '1'..'4'
     areaMin: null,
     areaMax: null,
-    bounds: null, // [west, south, east, north] from "Search this area"
+    bounds: null, // [west, south, east, north]: the visible map area the list follows
     sort: 'area', // 'area' | 'volume'
   };
 }
@@ -85,6 +86,17 @@ export function applyFilters(records, s) {
     if (tokens.length && !matchesQuery(r, tokens)) return false;
     return true;
   });
+}
+
+/**
+ * The map-area limit for what the map shows: `view` ([west, south, east, north])
+ * when it leaves out at least one located record, otherwise null, since a
+ * limit that hides nothing would only add a chip.
+ */
+export function boundsForView(records, view) {
+  const [w, so, e, n] = view;
+  const hidesSome = records.some((r) => r.located && (r.lon < w || r.lon > e || r.lat < so || r.lat > n));
+  return hidesSome ? [w, so, e, n] : null;
 }
 
 /** Largest first; unknown values always after known ones, never treated as 0. */

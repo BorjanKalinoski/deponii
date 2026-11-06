@@ -1,5 +1,6 @@
 import {
   test, expect, openSite, showList, openFilters, closeFilters, results, param, mapFeatures, mapIdle, isPhone,
+  openDetails, appState,
 } from './fixtures.mjs';
 
 const ids = (page) => results(page).evaluateAll((els) => els.map((e) => Number(e.dataset.id)).sort((a, b) => a - b));
@@ -146,28 +147,75 @@ test.describe('filters', () => {
     expect(await ids(page)).toEqual([6, 8, 9]);
   });
 
-  test('"Search this area" limits the results to the visible map', async ({ page }, info) => {
-    await openSite(page);
-    await expect(page.locator('#search-area')).toBeHidden();
-    // Zoom to Skopje the way a visitor would: by dragging and zooming the map.
+  /** Drag the map a little, the way a visitor pans it. */
+  async function dragMap(page, dx = 20, dy = 20) {
     const box = await page.locator('#map').boundingBox();
-    const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-    await page.mouse.move(centre.x, centre.y);
+    const c = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    await page.mouse.move(c.x, c.y);
     await page.mouse.down();
-    await page.mouse.move(centre.x + 20, centre.y + 20, { steps: 4 });
+    await page.mouse.move(c.x + dx, c.y + dy, { steps: 4 });
     await page.mouse.up();
-    await expect(page.locator('#search-area')).toBeVisible();
+  }
+
+  test('after the visitor moves the map, the list follows the visible area', async ({ page }, info) => {
+    await openSite(page);
+    // Zoom to Skopje, then let the visitor pan: the list narrows a second later, without a click.
     await page.evaluate(() => window.__deponii.map.jumpTo({ center: [21.44, 41.975], zoom: 11 }));
     await mapIdle(page);
-    await page.locator('#search-area').click();
-    await expect(page.locator('#search-area')).toBeHidden();
-    await expect.poll(async () => (await mapFeatures(page)).map((f) => f.id).sort()).toEqual([3, 4, 9]);
+    expect(param(page, 'b'), 'a move made by the app does not limit the list').toBeNull();
+    await dragMap(page);
+    await expect.poll(() => param(page, 'b'), { timeout: 5_000 }).toMatch(/^[\d.]+,[\d.]+,[\d.]+,[\d.]+$/);
     await showList(page, info);
     await expect(page.locator('#chips [data-chip="bounds"]')).toHaveText(/Само во видливото подрачје на мапата/);
     expect(await ids(page)).toEqual([3, 4, 9]);
-    expect(param(page, 'b')).toMatch(/^[\d.]+,[\d.]+,[\d.]+,[\d.]+$/);
+    // The map still draws every site, so nothing vanishes while panning.
+    expect((await mapFeatures(page)).length).toBe(9);
     await page.locator('#chips [data-chip="bounds"]').click();
     await expect(results(page)).toHaveCount(10);
+  });
+
+  test('the list waits until the map has been still for a moment', async ({ page }) => {
+    await openSite(page);
+    await page.evaluate(() => window.__deponii.map.jumpTo({ center: [21.44, 41.975], zoom: 11 }));
+    await mapIdle(page);
+    await dragMap(page);
+    await page.waitForTimeout(400);
+    expect(param(page, 'b'), 'not yet after 0.4 s').toBeNull();
+    await dragMap(page, -20, -20);
+    await page.waitForTimeout(700);
+    expect(param(page, 'b'), 'moving again restarts the wait').toBeNull();
+    await expect.poll(() => param(page, 'b'), { timeout: 5_000 }).not.toBeNull();
+  });
+
+  test('zoomed out to every site, moving the map adds no limit', async ({ page }) => {
+    await openSite(page);
+    await page.evaluate(() => window.__deponii.map.jumpTo({ center: [21.7, 41.6], zoom: 6 }));
+    await mapIdle(page);
+    await dragMap(page);
+    await page.waitForTimeout(1_600);
+    expect(param(page, 'b')).toBeNull();
+    await expect(page.locator('#chips [data-chip="bounds"]')).toHaveCount(0);
+  });
+
+  test('typing a search looks everywhere, not just in the visible area', async ({ page }, info) => {
+    await openSite(page, '?b=21.3,41.9,21.6,42.1');
+    await showList(page, info);
+    expect(await ids(page)).toEqual([3, 4, 9]);
+    await page.locator('#q').fill('Велес');
+    await expect(results(page)).toHaveCount(1);
+    expect(param(page, 'b')).toBeNull();
+  });
+
+  test('panning away from an open site keeps its details open', async ({ page }, info) => {
+    test.skip(isPhone(info), 'on phones the details sheet covers the map; the rule is the same');
+    await openSite(page);
+    await openDetails(page, info, 2);
+    await page.evaluate(() => window.__deponii.map.jumpTo({ center: [21.44, 41.975], zoom: 11 }));
+    await mapIdle(page);
+    await dragMap(page);
+    await expect.poll(() => param(page, 'b'), { timeout: 5_000 }).not.toBeNull();
+    await expect(page.locator('#details')).toBeVisible();
+    expect((await appState(page)).selectedId).toBe(2);
   });
 
   test('a shared link restores every filter, the sort and the language', async ({ page }, info) => {
