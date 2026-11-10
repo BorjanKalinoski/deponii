@@ -1,8 +1,8 @@
 {
   "source": "feed",
-  "checkedAt": "2026-11-09T12:55:13.225Z",
-  "dataChangedAt": "2026-11-09T12:55:13.225Z",
+  "checkedAt": "2026-11-10T12:41:29.007Z",
+  "dataChangedAt": "2026-11-10T12:41:29.007Z",
   "records": 441,
-  "located": 421,
-  "sha256": "03c0844e0c3a57cb0efbf7322cbf7b2c7e67a1ce946e1512f5f99f0004b7e4bb"
+  "located": 422,
+  "sha256": "e9dea4581ae59efa61d747c1d78ba8211ca2a221ebc2a8c3a8f02541229ff598"
 }
